@@ -81,6 +81,50 @@ Proposed mitigation for the judgment-laden context-gathering problem: index the 
 - **Caveat**: graph traversal only catches explicit/structural dependencies, not true implicit invariants (e.g., a business rule or event-name string that assumes old behavior without ever calling the changed code directly). Narrows the completeness gap, doesn't close it — still needs vector/semantic search for the non-structural residual.
 - Note: distinct from "Andrew Ng's graph engineering" content found during research, which is actually about *agent-orchestration* graphs (nodes = agent steps, edges = task dependencies), not codebase structure — don't conflate the two.
 
+## Design branch: debate-based verification (theoretical grounding + proposal)
+
+Explored 2026-08-18, prompted by working through complexity-theoretic foundations of the whole hypothesis. Captured as a real design branch to prototype, not yet built.
+
+### Theoretical grounding
+
+The Gru/minion split rests on the P vs NP verifier/search asymmetry: checking a candidate solution (e.g. running FAIL_TO_PASS tests) is cheap even when finding one is hard — this is the mathematical basis for why delegating solving to a cheap minion while a cheap check adjudicates should work at all, independent of minion capability.
+
+This decomposes into two separate steps, only one of which complexity theory covers for free:
+1. **Formalize**: real task T → formal spec S (Gru's authorship — generative, lossy, can be incomplete)
+2. **Check**: candidate patch X → pass/fail against S (near-oracle if S is well-formed — Gru, or a mechanical checker, can execute this reliably)
+
+"Assume Gru is an oracle" only buys you (2), cheaply. It does not buy you (1) — spec-authorship is not a membership-query into an already-defined language the way an NP oracle is; Gru has to invent the language (the spec) per task, and that invention step is where incompleteness enters. A perfectly-executed check against an incomplete spec still produces wrong verdicts — this is Goodhart's Law wearing a complexity-theory hat.
+
+**AI safety via debate** (Irving, Christiano, Amodei, 2018, arXiv 1805.00899) is directly relevant to step (1)'s weakness. Core result: direct judgment by a bounded verifier corresponds roughly to NP (can check a certificate, can't necessarily find one); structured *interactive* debate between two adversarial agents, judged by the same bounded verifier, can in principle get correct answers for questions in PSPACE (⊋ NP under standard assumptions) — same mechanism as the IP=PSPACE theorem: interaction, not a static proof, is what lets a weak judge correctly adjudicate a much larger class of claims. Empirically demonstrated on a toy MNIST task (sparse judge sees only a few revealed pixels; two debaters who see the full image argue for true vs. false labels): honest debater wins ~88.9% of the time at 6 revealed pixels, well above the judge's unaided accuracy (59.4%) — debate recovers far more correct-answer accuracy from a weak judge than direct evaluation of the same bounded evidence.
+
+**Acknowledged failure mode — directly maps onto our spec-authorship gap**: the *obfuscated arguments problem*. A dishonest debater can construct an argument that is long, plausible, and contains a fatal flaw structured so that locating it is computationally intractable within the debate's turn budget — breaking the "lying is harder than refuting a lie" equilibrium the whole approach depends on. This is the same phenomenon as Goodhart's Law / reward hacking, just in argument form instead of static-spec form. Follow-up literature: cross-examination variants (debaters can recursively interrogate sub-claims), and a 2026 successor, ["How to Avoid Debate: Scalable AI Safety via Doubly-Efficient Interactive Proofs"](https://arxiv.org/pdf/2607.03561), attempting the same PSPACE-style guarantee without inheriting this specific failure mode.
+
+### Proposed mechanism
+
+Not a replacement for mechanical verification (tests remain strictly better ground truth — an execution can't be obfuscated the way an argument can). Targets specifically the **non-automatable residual** from the open-questions list below (context-gathering completeness, summary quality, abstraction/design judgment) — currently defaults to mandatory Gru escalation; debate becomes a cheaper intermediate rung.
+
+Revised escalation ladder:
+```
+minion executes subtask
+  → mechanical check exists? → run it → pass/fail, done (cheapest, unchanged default)
+  → no mechanical check? → debate round
+      → judge confident? → accept/reject verdict, done (new, cheaper than Gru)
+      → judge not confident / debaters don't converge? → escalate to Gru (fallback, unchanged)
+```
+
+- **Debaters**: the minion that produced the candidate answer defends it; a second, independent minion with no stake in the original answer argues against it as skeptic.
+- **Judge**: a cheap model, not Gru — fixed rubric, bounded rounds (2-3 exchanges). This is the actual hypothesis under test: does interaction meaningfully lift a weak judge's effective accuracy for code/context tasks the way the MNIST toy result suggests, or does the theory not transfer? Falsify this first before building anything further on top of it.
+- **Skeptic's mandate explicitly includes reward-hacking checks** — one standing line of attack: "did the candidate modify or weaken a verification artifact instead of solving the task" (ties to the reward-hacking literature above, arXiv 2604.15149 / EvilGenie).
+- **Mitigating obfuscation**: keep debate turns short, force claims to be individually falsifiable/spot-checkable (e.g. skeptic must name a specific file/invariant, not assert vague incompleteness) — same spot-checkable property that motivated the structural-graph completeness idea. Escalate to cross-examination only if this proves insufficient empirically.
+
+### Cost caveat
+
+Adds calls (2 debater turns + judge, vs. 1 Gru escalation call). Only a net win if minion-tier tokens for a bounded debate are cheaper than one Gru call *and* debate verdicts are accurate enough not to just push errors downstream instead of catching them. Not assumed — needs measuring (cf. the Augment counter-example earlier: split-model setups aren't automatically cheaper).
+
+### Minimal first experiment (proposed, not yet run)
+
+Using the context-gathering-completeness subtask as the test case (the email-verification implicit-call-site example): run three conditions on the same held-out cases — (a) minion self-report, (b) debate-adjudicated, (c) mandatory Gru escalation as ground truth — compare debate's verdicts against Gru's on accuracy (did debate catch what Gru would've caught) and cost (tokens spent, debate vs. one Gru call), before touching the rest of the pipeline.
+
 ## Open questions (unresolved)
 
 1. **Plan format**: what fields does Gru's structured output actually contain per subtask (task description, verification criteria, search strategy/scope, dependency ordering)? Not yet designed.
@@ -89,3 +133,4 @@ Proposed mitigation for the judgment-laden context-gathering problem: index the 
 4. **Eval substrate mismatch**: SWE-bench doesn't include JIRA tickets/PDFs/multi-source context, so the "real SWE job" framing (ticket → docs → code) can only be partially exercised against it. Do we stay within SWE-bench (menial tasks = find files/summarize code/locate tests) or build/find a broader task set?
 5. **Reward-hacking detection**: do we adapt EvilGenie-style methodology (held-out tests, LLM-judge, test-file-edit detection) to catch a minion gaming Gru's verification criteria, and if so, is that itself automated or an escalation trigger?
 6. **Graph index build/maintenance cost**: not yet investigated — construction and incremental update cost for a structural codebase graph on real target repos (deferred; user asked to stay at design level for now).
+7. **Debate-based verification viability**: does interactive debate between two minions, judged by a cheap model, actually lift verification accuracy for code/context tasks the way the theory (and the MNIST toy result) suggests — or does it not transfer beyond toy settings? Proposed as a design branch, not yet prototyped or tested (see dedicated section above).
