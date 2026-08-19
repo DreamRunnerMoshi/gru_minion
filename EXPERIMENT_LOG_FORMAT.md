@@ -6,6 +6,8 @@ Motivation: Experiment 0 alone burned most of a session on infra debugging (Dock
 
 ## Template
 
+Write every section terse — bullets and one-liners over paragraphs. `experiments/exp0/LOG.md` is the reference example for the target density; match that, not the verbosity of an early draft.
+
 ```markdown
 # Experiment <N>: <short title>
 
@@ -16,43 +18,44 @@ Motivation: Experiment 0 alone burned most of a session on infra debugging (Dock
 ## Setup
 
 - **Model(s)**: <e.g. openrouter/anthropic/claude-haiku-4.5>
-- **Dataset**: <e.g. SWE-bench/SWE-bench_Lite, split=test> — note the exact HF dataset name; `princeton-nlp/SWE-bench_Lite` and `SWE-bench/SWE-bench_Lite` are NOT interchangeable (the former lacks the `image` field the harness needs)
-- **Instance selection**: <IDs used + how they were chosen — first-N, random seed, filtered how>
-- **Infra**: <where it ran — local / provider+instance type, $/hr, why>
-- **Harness/scaffold**: <e.g. mini-swe-agent vX.Y.Z, config file/overrides used>
-- **Key dependency versions**: <anything pinned away from latest, and why — e.g. litellm==1.90.0 (1.97.0 breaks on pydantic 2.13 with "Message is not fully defined")>
+- **Dataset**: <e.g. SWE-bench/SWE-bench_Lite, split=test> — use the exact HF dataset name (`princeton-nlp/SWE-bench_Lite` and `SWE-bench/SWE-bench_Lite` are NOT interchangeable — the former lacks the `image` field the harness needs)
+- **Instances**: <IDs + selection method — first-N, random seed, filtered how>
+- **Infra**: <where it ran, $/hr>
+- **Harness**: <e.g. mini-swe-agent vX.Y.Z, config/overrides>
+- **Pinned**: <any dependency pinned away from latest, one-line why — e.g. litellm==1.90.0 (1.97.0 breaks on pydantic 2.13)>
 
 ## Procedure
 
-<Exact commands run, or a pointer to a script that reproduces this. Note any deviation from what was planned mid-run.>
+<Exact reproducible commands, as if written fresh knowing what now works — not a transcript of the false starts (those go in Issues encountered). One code block.>
 
 ## Results
 
-| Instance | Resolved | Cost ($) | Steps/API calls | Notes |
+| Instance | Resolved | Cost | Tokens | API calls |
 |---|---|---|---|---|
 | ... | ... | ... | ... | ... |
 
-**Aggregate**: resolve rate, total cost, avg cost/instance.
+**<resolve rate>**, <infra failures>, <empty patches> — <one-line cost/token total, with actual-billed vs. tracked caveat if they diverge>.
 
 ## Issues encountered
 
-<Bulleted list of infra/tooling problems hit and how they were fixed. This section is the reason this format exists — write down anything that cost more than a few minutes to figure out, even if it seems obvious in hindsight.>
+<One bullet per problem: **symptom** → fix. Skip the narrative — write down anything that cost more than a few minutes, even if obvious in hindsight, so a future run doesn't rediscover it.>
 
 ## Findings
 
-<Qualitative analysis, especially of failures: genuine capability limit vs. drift/hallucination vs. infra artifact. This is the part that actually matters for the cost-minimization hypothesis — a resolve-rate number alone doesn't distinguish these.>
+<What the results mean, not what they are — especially for failures: genuine capability limit vs. drift/hallucination vs. confidently-incomplete-self-verification vs. infra artifact. A resolve-rate number alone doesn't distinguish these, and that distinction is the point of this project. Root-cause failures individually in short bullets, then one line on the pattern across them if there is one.>
 
 ## Conclusion & next steps
 
-<Does this confirm/refute the hypothesis under test? What does it motivate running next?>
+<1-3 sentences: confirmed/refuted, and what it motivates running next.>
 
 ## Artifacts
 
-<Relative paths to predictions/trajectories/reports for this experiment.>
+<One line: directory + file types, not an exhaustive listing.>
 ```
 
 ## Notes on using it
 
-- One `LOG.md` per experiment directory (`experiments/exp0/LOG.md`, `experiments/exp1/LOG.md`, ...) — keeps results colocated with the raw artifacts (trajectories, predictions, reports) it references.
-- Fill in **Issues encountered** even for a "successful" run if anything needed a workaround — the target reader is a future run of this same experiment, not just this one.
-- **Findings** is deliberately separate from **Results**: the table is what happened, this section is what it means. Don't skip it just because the table looks self-explanatory — a 60% resolve rate says nothing about whether the 40% failed from genuine difficulty or from drift, and that distinction is the entire point of this project.
+- One `LOG.md` per experiment directory (`experiments/exp0/LOG.md`, `experiments/exp1/LOG.md`, ...) — colocated with the raw artifacts it references.
+- Fill in **Issues encountered** even for a "successful" run if anything needed a workaround.
+- **Findings** stays separate from **Results**: the table is what happened, this section is what it means — never skip it just because the table looks self-explanatory.
+- Write it dense the first time rather than drafting long and trimming after — re-editing an already-written log for concision is wasted motion.
