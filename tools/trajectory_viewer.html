@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Trajectory Viewer</title>
+<style>
+  :root {
+    --bg: #1e1f22;
+    --panel: #2b2d31;
+    --border: #3f4147;
+    --text: #dcddde;
+    --text-dim: #949ba4;
+    --accent: #5865f2;
+    --system: #4a4f57;
+    --user: #2f4f6f;
+    --assistant: #2f5f4f;
+    --tool: #3a3a2f;
+    --exit: #5f2f2f;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  header {
+    padding: 14px 20px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  header h1 {
+    font-size: 15px;
+    margin: 0;
+    font-weight: 600;
+    color: var(--text);
+  }
+  #fileInput { color: var(--text); }
+  #summary {
+    font-size: 13px;
+    color: var(--text-dim);
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+  #summary span b { color: var(--text); }
+  #dropHint {
+    padding: 60px 20px;
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 14px;
+  }
+  main {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 20px;
+  }
+  .msg {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 12px;
+    overflow: hidden;
+  }
+  .msg-head {
+    padding: 8px 14px;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    user-select: none;
+  }
+  .msg.system .msg-head { background: var(--system); }
+  .msg.user .msg-head { background: var(--user); }
+  .msg.assistant .msg-head { background: var(--assistant); }
+  .msg.tool .msg-head { background: var(--tool); }
+  .msg.exit .msg-head { background: var(--exit); }
+  .msg-idx { color: var(--text-dim); font-weight: 400; margin-right: 8px; }
+  .msg-body {
+    padding: 14px;
+    background: var(--panel);
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    font-size: 13.5px;
+    line-height: 1.5;
+    max-height: 480px;
+    overflow-y: auto;
+  }
+  .msg-body.collapsed { display: none; }
+  .msg-body code, .msg-body pre {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+  }
+  .toggle-icon { font-size: 11px; opacity: 0.7; }
+  .diff-add { color: #5fb56a; }
+  .diff-del { color: #e06c75; }
+  .char-count { font-weight: 400; color: inherit; opacity: 0.7; font-size: 11px; }
+  #controls { display: flex; gap: 8px; }
+  button {
+    background: var(--accent);
+    border: none;
+    color: white;
+    padding: 5px 10px;
+    border-radius: 5px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  button:hover { opacity: 0.9; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Trajectory Viewer</h1>
+  <input type="file" id="fileInput" accept=".json,.traj.json" />
+  <div id="controls" style="display:none;">
+    <button id="expandAll">Expand all</button>
+    <button id="collapseAll">Collapse tool output</button>
+  </div>
+  <div id="summary"></div>
+</header>
+<main>
+  <div id="dropHint">Choose a .traj.json file above (mini-swe-agent trajectory format). Everything runs locally in your browser — nothing is uploaded anywhere.</div>
+  <div id="messages"></div>
+</main>
+
+<script>
+const fileInput = document.getElementById('fileInput');
+const messagesEl = document.getElementById('messages');
+const summaryEl = document.getElementById('summary');
+const dropHint = document.getElementById('dropHint');
+const controls = document.getElementById('controls');
+
+fileInput.addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (evt) => {
+    try {
+      const data = JSON.parse(evt.target.result);
+      render(data);
+    } catch (err) {
+      messagesEl.innerHTML = '<p style="color:#e06c75">Failed to parse JSON: ' + err.message + '</p>';
+    }
+  };
+  reader.readAsText(file);
+});
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function formatContent(text) {
+  if (typeof text !== 'string') text = JSON.stringify(text, null, 2);
+  const escaped = escapeHtml(text);
+  return escaped
+    .split('\n')
+    .map(line => {
+      if (line.startsWith('+') && !line.startsWith('+++')) return '<span class="diff-add">' + line + '</span>';
+      if (line.startsWith('-') && !line.startsWith('---')) return '<span class="diff-del">' + line + '</span>';
+      return line;
+    })
+    .join('\n');
+}
+
+function render(data) {
+  dropHint.style.display = 'none';
+  controls.style.display = 'flex';
+  messagesEl.innerHTML = '';
+
+  const info = data.info || {};
+  const stats = info.model_stats || {};
+  const bits = [];
+  if (info.exit_status) bits.push('<span>exit: <b>' + escapeHtml(info.exit_status) + '</b></span>');
+  if (stats.instance_cost !== undefined) bits.push('<span>cost: <b>$' + stats.instance_cost.toFixed(4) + '</b></span>');
+  if (stats.api_calls !== undefined) bits.push('<span>api calls: <b>' + stats.api_calls + '</b></span>');
+  if (info.mini_version) bits.push('<span>mini-swe-agent: <b>' + escapeHtml(info.mini_version) + '</b></span>');
+  bits.push('<span>messages: <b>' + (data.messages || []).length + '</b></span>');
+  summaryEl.innerHTML = bits.join('');
+
+  (data.messages || []).forEach((msg, i) => {
+    const role = msg.role || 'unknown';
+    const content = msg.content != null ? msg.content : (msg.tool_calls ? JSON.stringify(msg.tool_calls, null, 2) : '(empty)');
+    const contentStr = typeof content === 'string' ? content : JSON.stringify(content, null, 2);
+
+    const wrap = document.createElement('div');
+    wrap.className = 'msg ' + role;
+
+    const head = document.createElement('div');
+    head.className = 'msg-head';
+    const isLong = contentStr.length > 1500;
+    const startCollapsed = role === 'tool' && isLong;
+    head.innerHTML =
+      '<span><span class="msg-idx">#' + (i + 1) + '</span>' + escapeHtml(role) +
+      ' <span class="char-count">(' + contentStr.length.toLocaleString() + ' chars)</span></span>' +
+      '<span class="toggle-icon">' + (startCollapsed ? '▶ show' : '▼ hide') + '</span>';
+
+    const body = document.createElement('div');
+    body.className = 'msg-body' + (startCollapsed ? ' collapsed' : '');
+    body.innerHTML = formatContent(contentStr);
+
+    head.addEventListener('click', () => {
+      const collapsed = body.classList.toggle('collapsed');
+      head.querySelector('.toggle-icon').textContent = collapsed ? '▶ show' : '▼ hide';
+    });
+
+    wrap.appendChild(head);
+    wrap.appendChild(body);
+    messagesEl.appendChild(wrap);
+  });
+}
+
+document.getElementById('expandAll').addEventListener('click', () => {
+  document.querySelectorAll('.msg-body').forEach(b => b.classList.remove('collapsed'));
+  document.querySelectorAll('.toggle-icon').forEach(t => t.textContent = '▼ hide');
+});
+document.getElementById('collapseAll').addEventListener('click', () => {
+  document.querySelectorAll('.msg.tool .msg-body').forEach(b => {
+    if (b.textContent.length > 1500) b.classList.add('collapsed');
+  });
+  document.querySelectorAll('.msg.tool .toggle-icon').forEach(t => {
+    const body = t.closest('.msg').querySelector('.msg-body');
+    t.textContent = body.classList.contains('collapsed') ? '▶ show' : '▼ hide';
+  });
+});
+</script>
+</body>
+</html>
