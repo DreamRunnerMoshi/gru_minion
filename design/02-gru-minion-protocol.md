@@ -40,6 +40,16 @@ A real, documented risk, not just a theoretical concern. Multi-agent hallucinati
 4. **Unresolved fork, not resolved by evidence**: interleaved (ReAct-style — delegate, observe, delegate again, more adaptive/accurate, more round-trips) vs. batched (ReWOO-style — plan all research sub-calls upfront, fire in parallel, cheaper/faster, less adaptive to what earlier results reveal). Anthropic's own system leans batched-for-fan-out (parallel subagent spawning) while still allowing follow-up rounds — a hybrid (batch the obvious research calls upfront, allow at most one follow-up round) is a reasonable starting design, but nothing in the literature proves this is optimal for our case specifically.
 5. **Treat minion research findings as unverified inputs, not ground truth** — consistent with this project's existing verification-ladder stance (DESIGN.md) and reinforced by the hallucination-propagation risk in §4. A minion's summary should ideally be lightly checkable (e.g., does the file list it returned actually exist) before Gru's plan depends on it — this is our own inference extending the project's existing design principle, not something a cited paper prescribes directly for this scenario.
 
+## 6. How this diverges from the Anthropic precedent, and why
+
+Surface-level architecture matches §2 (lead plans + delegates, workers execute, results routed back), but the interaction pattern is deliberately different, not a gap:
+
+- **Anthropic: fan-out-and-synthesize.** Subagents run in parallel, report back, lead re-reads everything and synthesizes. Necessary because open-ended research has no automated pass/fail gate — the lead is the only available verifier, so every result has to route through it.
+- **This project: escalate-on-failure.** Minions execute against Gru-defined tasks + mechanical verification (test runners, FAIL_TO_PASS/PASS_TO_PASS, etc. — see [[project-orchestration-design]]). Gru is re-engaged only when a check fails, not on every completion. Possible specifically because SWE-bench-style tasks admit automated verification that research tasks don't.
+- **Cost consequence**: Anthropic's own numbers (§2 — ~15× tokens vs. single-agent, "explains 80% of variance" in eval score) are the cost of fan-out-and-synthesize's every-result-through-the-lead requirement. Escalate-on-failure is the whole point of not paying that multiplier here — re-engaging Gru on every minion step was explicitly rejected for eating the cost-savings hypothesis this project is testing (see [[project-orchestration-design]]'s Augment/Stencil counter-example).
+
+Net: don't read this project as "copying" the Anthropic pattern. The topology (lead + bounded workers, one level of delegation, bounded-scope task instructions per §5.1, artifacts-over-prose per §5.3) transfers directly and is adopted from it. The *re-engagement frequency* does not transfer, because it's downstream of a difference in verifiability between research and code-execution tasks, not a design preference.
+
 ## Gaps flagged (not filled with speculation)
 
 - No controlled cost/quality delegation-frequency curve found anywhere.
