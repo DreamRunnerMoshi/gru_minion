@@ -44,6 +44,18 @@ File naming: `<arXiv-id>-<slug>.md` for papers, `industry-<slug>.md` for non-pee
 |---|---|---|
 | [Code Isn't Memory](./2606.22417-code-structural-index.md) | Proposes a structural (call/definition-edge) codebase graph index, layered alongside vector/lexical search. | Proposed mitigation for judgment-laden context-gathering — candidate addition to the minion research toolkit. |
 
+### Token efficiency / reasoning vs. tool-call cost (feeds [experiments/exp1/NOTES.md](../experiments/exp1/NOTES.md))
+
+Started from a direct question about exp1's own numbers: how much of an agent's token spend is genuine reasoning vs. tool-call mechanics? See the synthesis note at the end of [exp1/NOTES.md](../experiments/exp1/NOTES.md#external-literature-cross-check) for how these connect to exp1's measured breakdown.
+
+| Paper | One-line takeaway | What we took |
+|---|---|---|
+| [Reasoning not required for tool calls](./2605.09252-reasoning-not-required-for-tool-calls.md) | A model's hidden state already "knows" whether a tool call is needed (AUROC 0.89-0.96) before generating any explicit reasoning about it; skipping the verbalization cuts tool calls 48% for 1.7% accuracy loss. | Complicates exp1's "content-field reasoning is real work" framing — some of even that content-field reasoning may be narrating an already-made decision, not producing it. Untested for this project's model/task. |
+| [CodeAgents](./2507.03254-codeagents-codified-reasoning-efficiency.md) | Code-based reasoning beats natural-language CoT on token cost (40-87% less) *and* often on accuracy, across GAIA/HotpotQA/VirtualHome. | Independent confirmation of exp1's tool-call-breakdown correction: reasoning-via-code (what Qwen was doing in 31% of its tool calls) is a more efficient medium, not "cheap boilerplate" competing with real prose reasoning. |
+| [Token Economics for LLM Agents](./2605.09104-token-economics-llm-agents.md) | Input:output ratios exceed 150:1 on SWE tasks in production; context loading, not generation, is the dominant cost; token usage varies up to 30× across repeated runs of the same task. | Exp1's measured 32:1 ratio may be on the *low* end for this task family. The 30× run-to-run variance is a real caveat exp1 didn't have (single run, no repeats) — flagged for Phase 2's ablation design. |
+| [Agentic AI Workload Characteristics](./2605.26297-agentic-workload-characteristics.md) | Effective context caching makes agent execution decode-dominated; tool use shifts from explore to execute over a task's lifetime. | External qualitative cross-check on exp1's own inferred ~96% cache-hit estimate, and matches exp1's trajectories' explore-then-fix command pattern. Numbers not independently extracted — corroboration is qualitative only. |
+| [Notation Matters](./2605.29676-notation-matters-tool-call-formats.md) | Benchmarks token cost of different tool-call notation formats (JSON vs. TOON/TRON alternatives). | **Placeholder — numbers not retrieved.** A potential fourth, format-level lever on tool-call token cost, unconfirmed. |
+
 ## Industry writeups (not peer-reviewed — separate evidentiary weight)
 
 | Writeup | One-line takeaway | What we took |
