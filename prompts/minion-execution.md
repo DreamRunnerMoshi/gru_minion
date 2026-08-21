@@ -75,9 +75,9 @@ Follow these steps, as separate commands, in order:
 
 Step 1: Create the patch.
 ```
-git diff -- {{ touched_files_hint }} > patch.txt
+git diff > patch.txt
 ```
-Only the files actually relevant to this delegation — not incidental changes, not files outside `{{ subtask.inputs.scope }}`.
+Before running this, make sure your working tree only contains changes actually relevant to this delegation — not incidental changes, not files outside `{{ subtask.inputs.scope }}`. If you touched something you shouldn't have, revert it first.
 
 Step 2: Verify the patch.
 Inspect `patch.txt` to confirm it only contains your intended change.
