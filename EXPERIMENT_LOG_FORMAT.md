@@ -30,11 +30,18 @@ Write every section terse — bullets and one-liners over paragraphs. `experimen
 
 ## Results
 
-| Instance | Resolved | Cost | Tokens | API calls |
-|---|---|---|---|---|
-| ... | ... | ... | ... | ... |
+**Numbers only. One table, one summary line. No prose paragraphs, no methodology, no caveats, no "why this matters" — those go in Findings or NOTES.md (see below).** If you catch yourself writing a second sentence under the table, stop and move it out.
 
-**<resolve rate>**, <infra failures>, <empty patches> — <one-line cost/token total, with actual-billed vs. tracked caveat if they diverge>.
+| Instance | Resolved | Prompt tok | Compl tok | Cache-hit% | API calls | Wall-clock |
+|---|---|---|---|---|---|---|
+| ... | ... | ... | ... | ... | ... | ... |
+| **Total** | x/N | ... | ... | ... | ... | ... |
+
+`<resolve rate>` · `<cost total, $ or GPU-hr>` · `<infra failures>` · `<empty patches>`
+
+Drop any column that doesn't apply (e.g. no cache-hit% if the provider doesn't expose it) rather than filling it with N/A. Add a column instead of a paragraph if a new metric is genuinely per-instance data (this is how prompt/compl/cache-hit got added here) — the test for "column vs. Findings bullet vs. NOTES.md" is: *is it a number that varies per instance* (→ column) *, a one-sentence takeaway* (→ Findings bullet) *, or does explaining it need methodology/caveats/multiple sentences* (→ NOTES.md).
+
+**Cache stats**: capture KV/prompt-cache reuse live, during the run, not after, whenever the provider exposes it — self-hosted or metered API (Anthropic's `cache_read_input_tokens`, OpenAI's `prompt_tokens_details.cached_tokens`, or the self-hosted server's own stats endpoint if litellm doesn't surface it). Reconstructing it later from a destroyed instance only gets you an estimate — see `experiments/exp1/NOTES.md` for what that reconstruction looks like and why it's a fallback, not the plan.
 
 ## Issues encountered
 
@@ -42,7 +49,7 @@ Write every section terse — bullets and one-liners over paragraphs. `experimen
 
 ## Findings
 
-<What the results mean, not what they are — especially for failures: genuine capability limit vs. drift/hallucination vs. confidently-incomplete-self-verification vs. infra artifact. A resolve-rate number alone doesn't distinguish these, and that distinction is the point of this project. Root-cause failures individually in short bullets, then one line on the pattern across them if there is one.>
+<What the results mean, not what they are — one bullet per point, **2 sentences max each**. Especially for failures: genuine capability limit vs. drift/hallucination vs. confidently-incomplete-self-verification vs. infra artifact. Root-cause failures individually in short bullets, then one line on the pattern across them if there is one. If a finding needs more than 2 sentences to state, it needs NOTES.md, not a longer bullet.>
 
 ## Conclusion & next steps
 
@@ -53,9 +60,14 @@ Write every section terse — bullets and one-liners over paragraphs. `experimen
 <One line: directory + file types, not an exhaustive listing.>
 ```
 
+## NOTES.md — where the long stuff goes
+
+Some findings genuinely need methodology, worked numbers, and caveats to be credible (e.g. "how was cache-hit % estimated after the instance was destroyed" needs to show its work). That doesn't belong in `LOG.md` — put it in `experiments/<expN>/NOTES.md` and link it from the one Findings bullet that needs it: `- Cache-hit ~96% (est.) — real cost lever, see [NOTES.md](./NOTES.md)#cache-estimate.` `LOG.md` should be readable end-to-end in under a minute; `NOTES.md` is where you're allowed to show your work at whatever length it takes. `experiments/exp1/NOTES.md` is the reference example.
+
 ## Notes on using it
 
-- One `LOG.md` per experiment directory (`experiments/exp0/LOG.md`, `experiments/exp1/LOG.md`, ...) — colocated with the raw artifacts it references.
+- One `LOG.md` per experiment directory (`experiments/exp0/LOG.md`, `experiments/exp1/LOG.md`, ...) — colocated with the raw artifacts it references. `NOTES.md` alongside it is optional — only add one when a finding actually needs the space.
 - Fill in **Issues encountered** even for a "successful" run if anything needed a workaround.
 - **Findings** stays separate from **Results**: the table is what happened, this section is what it means — never skip it just because the table looks self-explanatory.
 - Write it dense the first time rather than drafting long and trimming after — re-editing an already-written log for concision is wasted motion.
+- **If a correction is needed after the fact** (a finding turns out to be wrong or overstated), edit the bullet in place — don't leave the old claim standing with a "Correction:" bullet appended after it. `LOG.md` should read as current-best-understanding, not as a transcript of the discussion that produced it; the discussion trail belongs in conversation history, not the file.
