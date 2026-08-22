@@ -137,30 +137,45 @@ def parse_gru_actions(tool_calls: list, *, format_error_template: str, template_
         error_msg = ""
         args: dict = {}
         try:
-            args = json.loads(tool_call.function.arguments)
+            parsed = json.loads(tool_call.function.arguments)
         except Exception as e:
+            parsed = None
             error_msg = f"Error parsing tool call arguments: {e}. "
+
+        if not error_msg and not isinstance(parsed, dict):
+            error_msg = f"Tool call arguments must be a JSON object, got {type(parsed).__name__}."
+        elif not error_msg:
+            args = parsed
 
         if not error_msg and name not in _TOOL_NAMES:
             error_msg = f"Unknown tool '{name}'. Must be one of {sorted(_TOOL_NAMES)}."
 
         if not error_msg and name == "delegate_to_minion":
             missing = [k for k in _DELEGATE_REQUIRED if k not in args]
+            inputs = args.get("inputs")
+            inputs = inputs if isinstance(inputs, dict) else {}
+            verification = args.get("verification")
+            verification = verification if isinstance(verification, dict) else {}
             if missing:
                 error_msg = f"delegate_to_minion missing required field(s): {missing}."
             elif args.get("type") not in _DELEGATE_TYPES:
                 error_msg = f"delegate_to_minion 'type' must be one of {sorted(_DELEGATE_TYPES)}, got {args.get('type')!r}."
-            elif "scope" not in args.get("inputs", {}):
+            elif not isinstance(args.get("inputs"), dict):
+                error_msg = f"delegate_to_minion.inputs must be a JSON object with a 'scope' field, got {type(args.get('inputs')).__name__}."
+            elif "scope" not in inputs:
                 error_msg = "delegate_to_minion.inputs missing required 'scope'."
             elif args["type"] in ("context_gather", "locate") and not args.get("search_strategy"):
                 error_msg = f"delegate_to_minion with type={args['type']!r} requires a non-empty 'search_strategy'."
-            elif args["type"] == "synthesize" and not args.get("verification", {}).get("checks"):
-                error_msg = "delegate_to_minion with type='synthesize' requires at least one verification.checks entry."
+            elif args["type"] == "synthesize" and not verification.get("checks"):
+                error_msg = "delegate_to_minion with type='synthesize' requires at least one verification.checks entry (as an object: {\"checks\": [...]})."
 
         if not error_msg and name == "finish":
+            final_verification = args.get("final_verification")
             if "summary" not in args:
                 error_msg = "finish missing required field 'summary'."
-            elif not args.get("final_verification", {}).get("checks"):
+            elif not isinstance(final_verification, dict):
+                error_msg = f"finish.final_verification must be a JSON object with a 'checks' field (e.g. {{\"checks\": [...]}}), got {type(final_verification).__name__}."
+            elif not final_verification.get("checks"):
                 error_msg = "finish.final_verification.checks must be non-empty — see prompts/gru-loop.md for why this can't be skipped."
 
         if error_msg:
