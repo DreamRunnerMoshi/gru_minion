@@ -1,0 +1,99 @@
+{
+  "instance_id": "astropy__astropy-14365",
+  "model": "ollama_chat/qwen3.8:27b",
+  "start_time": 1787366407.4398444,
+  "end_time": 1787367443.8622386,
+  "wall_clock_seconds": 1036.4223942756653,
+  "exit_status": "Submitted",
+  "final_verification_passed": true,
+  "final_verification_output": "$ python - <<'EOF'\nimport warnings\nimport numpy as np\nfrom astropy.table import Table\n\ndef read_qdp(text):\n    with open('/tmp/v.qdp','w') as f:\n        f.write(text)\n    with warnings.catch_warnings():\n        warnings.simplefilter('ignore')\n        return Table.read('/tmp/v.qdp', format='ascii.qdp')\n\n# bug-report case\nt = read_qdp('read serr 1 2\\n1 0.5 1 0.5\\n')\nerr_cols = [c for c in t.colnames if 'err' in c]\nassert len(err_cols) == 2, t.colnames\nassert t[err_cols[0]][0] == 0.5 and t[err_cols[1]][0] == 0.5\n\n# lowercase TERR + SERR with valid shape\nt2 = read_qdp('read terr 1\\nread serr 2\\n53000.123456 2.378472e-05 -2.378472e-05 -0.212439 0.212439\\nNO NO NO NO NO\\n')\nassert any('_perr' in c for c in t2.colnames) and any('_nerr' in c for c in t2.colnames), t2.colnames\n\n# mixed case\nwith open('/tmp/v.qdp','w') as f:\n    f.write('Read Terr 1\\nRead Serr 2\\n53000.123456 2.378472e-05 -2.378472e-05 -0.212439 0.212439\\n')\nwith warnings.catch_warnings():\n    warnings.simplefilter('ignore')\n    t3 = Table.read('/tmp/v.qdp', format='ascii.qdp')\nassert any('_perr' in c for c in t3.colnames), t3.colnames\n\n# uppercase regression\nt4 = read_qdp('READ SERR 1 2\\n1 0.5 1 0.5\\n')\nassert len([c for c in t4.colnames if 'err' in c]) == 2, t4.colnames\n\n# NO masking untouched\nt5 = read_qdp('read serr 1\\n1 NO\\n')\nerr = [c for c in t5.colnames if 'err' in c][0]\nassert np.ma.is_masked(t5[err][0]) or np.isnan(t5[err][0])\nprint('repro verification OK')\nEOF\n(exit 0)\nrepro verification OK\n\n\n$ python -m pytest /testbed/astropy/io/ascii/tests/test_qdp.py -q\n(exit 0)\n<frozen importlib._bootstrap>:228: RuntimeWarning: numpy.ndarray size changed, may indicate binary incompatibility. Expected 80 from C header, got 96 from PyObject\nInternet access disabled\n\u001b[32m.\u001b[0m\u001b[32m.\u001b[0m\u001b[32m.\u001b[0m\u001b[32m.\u001b[0m\u001b[32m.\u001b[0m\u001b[32m.\u001b[0m\u001b[32m.\u001b[0m\u001b[32m.\u001b[0m\u001b[32m.\u001b[0m\u001b[32m                                                                [100%]\u001b[0m\n\u001b[32m\u001b[32m\u001b[1m9 passed\u001b[0m\u001b[32m in 0.08s\u001b[0m\u001b[0m\n\n\n$ python -m pytest /testbed/astropy/io/ascii/tests/ -q 2>&1 | tail -1 | grep -E \"passed\"\n(exit 0)\n\u001b[32m\u001b[32m\u001b[1m826 passed\u001b[0m, \u001b[33m36 skipped\u001b[0m, \u001b[33m6 xfailed\u001b[0m\u001b[32m in 17.73s\u001b[0m\u001b[0m\n",
+  "gru": {
+    "api_calls": 8,
+    "cost": 0.0,
+    "prompt_tokens": 72950,
+    "completion_tokens": 6326,
+    "total_tokens": 79276
+  },
+  "minions": [
+    {
+      "delegation_id": "t1",
+      "type": "context_gather",
+      "description": "Find the QDP command-parsing logic in astropy.io.ascii.qdp so we can see exactly where case sensitivity lives.",
+      "api_calls": 7,
+      "cost": 0.0,
+      "prompt_tokens": 35880,
+      "completion_tokens": 4157,
+      "total_tokens": 40037,
+      "exit_status": "Submitted",
+      "trajectory_path": "results/astropy-14365/minions/t1.traj.json"
+    },
+    {
+      "delegation_id": "t2",
+      "type": "synthesize",
+      "description": "Make QDP command parsing in /testbed/astropy/io/ascii/qdp.py case-insensitive, and add a regression test proving a lowercase command file reads into a Table with errors.",
+      "api_calls": 7,
+      "cost": 0.0,
+      "prompt_tokens": 81234,
+      "completion_tokens": 6440,
+      "total_tokens": 87674,
+      "exit_status": "Submitted",
+      "trajectory_path": "results/astropy-14365/minions/t2.traj.json"
+    },
+    {
+      "delegation_id": "t3",
+      "type": "synthesize",
+      "description": "Verify (and re-demonstrate) that lowercase and mixed-case QDP command files read into a Table with error columns, and that uppercase still works. This check should pass against the current state of /testbed; if it does not, report the actual colnames.",
+      "api_calls": 10,
+      "cost": 0.0,
+      "prompt_tokens": 176272,
+      "completion_tokens": 14117,
+      "total_tokens": 190389,
+      "exit_status": "Submitted",
+      "trajectory_path": "results/astropy-14365/minions/t3.traj.json"
+    },
+    {
+      "delegation_id": "t4",
+      "type": "context_gather",
+      "description": "Clarify the correct input shape for TERR files and whether the IndexError at qdp.py:228 is expected for my test input.",
+      "api_calls": 5,
+      "cost": 0.0,
+      "prompt_tokens": 28960,
+      "completion_tokens": 4695,
+      "total_tokens": 33655,
+      "exit_status": "Submitted",
+      "trajectory_path": "results/astropy-14365/minions/t4.traj.json"
+    },
+    {
+      "delegation_id": "t5",
+      "type": "synthesize",
+      "description": "Confirm the case-insensitive fix works for lowercase SERR (bug report case), lowercase+mixed-case TERR, uppercase regression, NO-value handling, and that the existing qdp test suite still passes.",
+      "api_calls": 10,
+      "cost": 0.0,
+      "prompt_tokens": 80521,
+      "completion_tokens": 3380,
+      "total_tokens": 83901,
+      "exit_status": "Submitted",
+      "trajectory_path": "results/astropy-14365/minions/t5.traj.json"
+    },
+    {
+      "delegation_id": "t6",
+      "type": "synthesize",
+      "description": "Confirm a regression test for lowercase QDP commands exists in test_qdp.py and that the broader ascii test suite shows no regressions.",
+      "api_calls": 4,
+      "cost": 0.0,
+      "prompt_tokens": 23152,
+      "completion_tokens": 1263,
+      "total_tokens": 24415,
+      "exit_status": "Submitted",
+      "trajectory_path": "results/astropy-14365/minions/t6.traj.json"
+    }
+  ],
+  "minions_total": {
+    "count": 6,
+    "api_calls": 43,
+    "cost": 0.0,
+    "prompt_tokens": 426019,
+    "completion_tokens": 34052,
+    "total_tokens": 460071
+  }
+}
