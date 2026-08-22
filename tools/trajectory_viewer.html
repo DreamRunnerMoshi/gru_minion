@@ -7,6 +7,7 @@
   :root {
     --bg: #1e1f22;
     --panel: #2b2d31;
+    --panel-alt: #313338;
     --border: #3f4147;
     --text: #dcddde;
     --text-dim: #949ba4;
@@ -16,6 +17,15 @@
     --assistant: #2f5f4f;
     --tool: #3a3a2f;
     --exit: #5f2f2f;
+    --ok: #5fb56a;
+    --bad: #e06c75;
+    --warn: #d9a441;
+    --json-key: #7dc4e4;
+    --json-str: #b5cea8;
+    --json-num: #d19a66;
+    --json-bool: #d9a441;
+    --json-null: #7a7a7a;
+    --json-punct: #949ba4;
   }
   * { box-sizing: border-box; }
   body {
@@ -25,52 +35,94 @@
     color: var(--text);
   }
   header {
-    padding: 14px 20px;
+    padding: 12px 20px;
     background: var(--panel);
     border-bottom: 1px solid var(--border);
     display: flex;
     align-items: center;
-    gap: 16px;
+    gap: 14px;
     flex-wrap: wrap;
     position: sticky;
     top: 0;
-    z-index: 10;
+    z-index: 20;
   }
   header h1 {
     font-size: 15px;
     margin: 0;
     font-weight: 600;
     color: var(--text);
+    white-space: nowrap;
   }
-  #fileInput { color: var(--text); }
-  #summary {
-    font-size: 13px;
-    color: var(--text-dim);
+  #fileInput { display: none; }
+  #fileLabel {
+    background: var(--accent);
+    color: white;
+    padding: 6px 12px;
+    border-radius: 5px;
+    font-size: 12.5px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  #fileLabel:hover { opacity: 0.9; }
+  #tabs {
     display: flex;
-    gap: 14px;
+    gap: 4px;
     flex-wrap: wrap;
   }
+  .tab {
+    padding: 5px 10px;
+    border-radius: 5px;
+    font-size: 12px;
+    background: var(--panel-alt);
+    border: 1px solid var(--border);
+    cursor: pointer;
+    color: var(--text-dim);
+    white-space: nowrap;
+  }
+  .tab.active { background: var(--accent); color: white; border-color: var(--accent); }
+  .tab:hover:not(.active) { color: var(--text); }
+  #summary {
+    font-size: 12.5px;
+    color: var(--text-dim);
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-left: auto;
+  }
   #summary span b { color: var(--text); }
+  #searchBox {
+    background: var(--panel-alt);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 5px 10px;
+    border-radius: 5px;
+    font-size: 12.5px;
+    width: 180px;
+  }
+  #searchBox:focus { outline: 1px solid var(--accent); }
+  #searchStatus { font-size: 11.5px; color: var(--text-dim); white-space: nowrap; }
   #dropHint {
-    padding: 60px 20px;
+    padding: 80px 20px;
     text-align: center;
     color: var(--text-dim);
     font-size: 14px;
   }
+  #dropHint.dragover { outline: 2px dashed var(--accent); outline-offset: -10px; }
   main {
-    max-width: 900px;
+    max-width: 1100px;
     margin: 0 auto;
     padding: 20px;
   }
   .msg {
     border: 1px solid var(--border);
     border-radius: 8px;
-    margin-bottom: 12px;
+    margin-bottom: 10px;
     overflow: hidden;
   }
+  .msg.dimmed { opacity: 0.35; }
   .msg-head {
-    padding: 8px 14px;
-    font-size: 12px;
+    padding: 7px 14px;
+    font-size: 11.5px;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.04em;
@@ -79,16 +131,25 @@
     justify-content: space-between;
     align-items: center;
     user-select: none;
+    gap: 10px;
   }
+  .msg-head-left { display: flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .msg-head-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
   .msg.system .msg-head { background: var(--system); }
   .msg.user .msg-head { background: var(--user); }
   .msg.assistant .msg-head { background: var(--assistant); }
   .msg.tool .msg-head { background: var(--tool); }
   .msg.exit .msg-head { background: var(--exit); }
-  .msg-idx { color: var(--text-dim); font-weight: 400; margin-right: 8px; }
+  .msg-idx { color: rgba(255,255,255,0.6); font-weight: 400; }
   .msg-body {
     padding: 14px;
     background: var(--panel);
+  }
+  .msg-body.collapsed { display: none; }
+  .msg-body pre, .msg-body code {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+  }
+  .prose {
     white-space: pre-wrap;
     word-wrap: break-word;
     font-size: 13.5px;
@@ -96,39 +157,119 @@
     max-height: 480px;
     overflow-y: auto;
   }
-  .msg-body.collapsed { display: none; }
-  .msg-body code, .msg-body pre {
-    font-family: "SF Mono", Menlo, Consolas, monospace;
+  .toggle-icon { font-size: 10.5px; opacity: 0.75; flex-shrink: 0; }
+  .diff-add { color: var(--ok); }
+  .diff-del { color: var(--bad); }
+  /* Markdown rendering for authored prose (assistant/system/user/exit content).
+     Not applied to tool-output content, which is raw command output/file text. */
+  .md { font-size: 13.5px; line-height: 1.55; max-height: 480px; overflow-y: auto; }
+  .md > *:first-child { margin-top: 0; }
+  .md > *:last-child { margin-bottom: 0; }
+  .md p { margin: 0 0 10px; white-space: pre-wrap; }
+  .md h3, .md h4, .md h5, .md h6 { margin: 14px 0 6px; font-weight: 600; color: var(--text); }
+  .md h3 { font-size: 15px; } .md h4 { font-size: 14px; } .md h5, .md h6 { font-size: 13.5px; }
+  .md ul, .md ol { margin: 6px 0 10px; padding-left: 22px; }
+  .md li { margin: 2px 0; white-space: pre-wrap; }
+  .md li::marker { color: var(--text-dim); }
+  .md code { background: rgba(255,255,255,0.08); padding: 1px 5px; border-radius: 4px; font-size: 0.92em; }
+  .md pre { background: var(--panel-alt); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; overflow-x: auto; margin: 8px 0; }
+  .md pre code { background: none; padding: 0; white-space: pre-wrap; word-wrap: break-word; }
+  .md blockquote { margin: 8px 0; padding: 2px 12px; border-left: 3px solid var(--border); color: var(--text-dim); }
+  .md hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
+  .md strong { color: var(--text); font-weight: 700; }
+  .badge {
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: 11px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.12);
+    color: rgba(255,255,255,0.85);
+    white-space: nowrap;
   }
-  .toggle-icon { font-size: 11px; opacity: 0.7; }
-  .diff-add { color: #5fb56a; }
-  .diff-del { color: #e06c75; }
-  .char-count { font-weight: 400; color: inherit; opacity: 0.7; font-size: 11px; }
-  #controls { display: flex; gap: 8px; }
+  .badge.bad { background: rgba(224,108,117,0.25); color: #ffb3b8; }
+  .badge.ok { background: rgba(95,181,106,0.25); color: #b9e6bd; }
+  .badge.warn { background: rgba(217,164,65,0.25); color: #ffd68a; }
+  mark { background: #d9a441; color: #1e1f22; border-radius: 2px; }
+  .tool-call-block {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin-top: 10px;
+    overflow: hidden;
+  }
+  .tool-call-block:first-child { margin-top: 0; }
+  .tool-call-head {
+    background: var(--panel-alt);
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #b7c2ff;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .tool-call-head .tool-icon { opacity: 0.8; }
+  .tool-call-body { padding: 10px 12px; font-size: 13px; }
+  .section-label {
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-dim);
+    margin: 12px 0 6px;
+    font-weight: 600;
+  }
+  .section-label:first-child { margin-top: 0; }
+  /* JSON tree */
+  .jtree { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 12.5px; line-height: 1.6; }
+  .jtree .jkey { color: var(--json-key); }
+  .jtree .jstr { color: var(--json-str); }
+  .jtree .jnum { color: var(--json-num); }
+  .jtree .jbool { color: var(--json-bool); }
+  .jtree .jnull { color: var(--json-null); font-style: italic; }
+  .jtree .jpunct { color: var(--json-punct); }
+  .jtree .jmultiline { white-space: pre-wrap; word-wrap: break-word; }
+  .jtoggle {
+    cursor: pointer;
+    color: var(--text-dim);
+    user-select: none;
+    display: inline-block;
+    width: 12px;
+  }
+  .jchildren { margin-left: 18px; border-left: 1px solid var(--border); padding-left: 10px; }
+  .jchildren.jcollapsed { display: none; }
+  .jcount { color: var(--text-dim); font-size: 11px; cursor: pointer; }
+  #controls { display: flex; gap: 6px; }
   button {
-    background: var(--accent);
-    border: none;
-    color: white;
+    background: var(--panel-alt);
+    border: 1px solid var(--border);
+    color: var(--text);
     padding: 5px 10px;
     border-radius: 5px;
     font-size: 12px;
     cursor: pointer;
+    white-space: nowrap;
   }
-  button:hover { opacity: 0.9; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: white; }
 </style>
 </head>
 <body>
 <header>
   <h1>Trajectory Viewer</h1>
-  <input type="file" id="fileInput" accept=".json,.traj.json" />
+  <label id="fileLabel" for="fileInput">Open file(s)</label>
+  <input type="file" id="fileInput" accept=".json,.traj.json" multiple />
   <div id="controls" style="display:none;">
     <button id="expandAll">Expand all</button>
-    <button id="collapseAll">Collapse tool output</button>
+    <button id="collapseAll">Collapse long</button>
   </div>
+  <input type="text" id="searchBox" placeholder="Search messages…" style="display:none;" />
+  <span id="searchStatus"></span>
+  <div id="tabs"></div>
   <div id="summary"></div>
 </header>
 <main>
-  <div id="dropHint">Choose a .traj.json file above (mini-swe-agent trajectory format). Everything runs locally in your browser — nothing is uploaded anywhere.</div>
+  <div id="dropHint">Open or drag in one or more <code>.traj.json</code> files (mini-swe-agent / Gru-minion trajectory format). Everything runs locally in your browser — nothing is uploaded anywhere.</div>
   <div id="messages"></div>
 </main>
 
@@ -138,30 +279,63 @@ const messagesEl = document.getElementById('messages');
 const summaryEl = document.getElementById('summary');
 const dropHint = document.getElementById('dropHint');
 const controls = document.getElementById('controls');
+const tabsEl = document.getElementById('tabs');
+const searchBox = document.getElementById('searchBox');
+const searchStatus = document.getElementById('searchStatus');
 
-fileInput.addEventListener('change', (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = (evt) => {
-    try {
-      const data = JSON.parse(evt.target.result);
-      render(data);
-    } catch (err) {
-      messagesEl.innerHTML = '<p style="color:#e06c75">Failed to parse JSON: ' + err.message + '</p>';
-    }
-  };
-  reader.readAsText(file);
+const files = {}; // name -> parsed data
+let activeFile = null;
+
+fileInput.addEventListener('change', (e) => loadFiles(e.target.files));
+document.body.addEventListener('dragover', (e) => { e.preventDefault(); dropHint.classList.add('dragover'); });
+document.body.addEventListener('dragleave', () => dropHint.classList.remove('dragover'));
+document.body.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dropHint.classList.remove('dragover');
+  loadFiles(e.dataTransfer.files);
 });
+
+function loadFiles(fileList) {
+  Array.from(fileList).forEach(file => {
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        files[file.name] = JSON.parse(evt.target.result);
+        rebuildTabs();
+        if (!activeFile || Object.keys(files).length === 1) setActive(file.name);
+      } catch (err) {
+        alert('Failed to parse ' + file.name + ': ' + err.message);
+      }
+    };
+    reader.readAsText(file);
+  });
+}
+
+function rebuildTabs() {
+  const names = Object.keys(files);
+  tabsEl.style.display = names.length > 1 ? 'flex' : 'none';
+  tabsEl.innerHTML = names.map(n =>
+    '<div class="tab' + (n === activeFile ? ' active' : '') + '" data-name="' + escapeHtml(n) + '">' + escapeHtml(n) + '</div>'
+  ).join('');
+  tabsEl.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => setActive(t.dataset.name)));
+}
+
+function setActive(name) {
+  activeFile = name;
+  rebuildTabs();
+  render(files[name]);
+}
 
 function escapeHtml(str) {
   const div = document.createElement('div');
-  div.textContent = str;
+  div.textContent = String(str);
   return div.innerHTML;
 }
 
-function formatContent(text) {
-  if (typeof text !== 'string') text = JSON.stringify(text, null, 2);
+function fmtNum(n) { return Number(n).toLocaleString(); }
+
+// ---------- diff-aware plain text rendering ----------
+function formatPlainText(text) {
   const escaped = escapeHtml(text);
   return escaped
     .split('\n')
@@ -173,66 +347,424 @@ function formatContent(text) {
     .join('\n');
 }
 
+// ---------- markdown rendering (for authored prose only, not tool output) ----------
+// A raw diff/patch dump (e.g. "cat patch.txt") must never go through markdown —
+// its "---"/"+++" lines and leading +/- would be reinterpreted as markdown syntax.
+// Detect that case and fall back to the plain diff-colored view instead.
+function looksLikeDiff(text) {
+  const head = text.slice(0, 400);
+  return /^diff --git |^index [0-9a-f]{7,}\.\.[0-9a-f]{7,}|^--- a\/|^\+\+\+ b\/|^@@ -\d/m.test(head);
+}
+
+function mdInline(escapedText) {
+  // Operates on already-HTML-escaped text, so raw <, >, & are already safe;
+  // patterns below only ever match literal *, _, ` characters.
+  let t = escapedText;
+  t = t.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+  t = t.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+  t = t.replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,;:!?]|$)/g, '$1<em>$2</em>');
+  t = t.replace(/(^|[\s(])_([^_\n]+)_(?=[\s).,;:!?]|$)/g, '$1<em>$2</em>');
+  return t;
+}
+
+function renderMarkdown(raw) {
+  const lines = raw.replace(/\r\n/g, '\n').split('\n');
+  let html = '';
+  let listType = null; // 'ul' | 'ol' | null
+  let paraBuf = [];
+
+  const flushPara = () => {
+    if (paraBuf.length) {
+      html += '<p>' + mdInline(escapeHtml(paraBuf.join('\n'))) + '</p>';
+      paraBuf = [];
+    }
+  };
+  const closeList = () => {
+    if (listType) { html += '</' + listType + '>'; listType = null; }
+  };
+
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+
+    const fence = line.match(/^\s*```(\w*)\s*$/);
+    if (fence) {
+      flushPara(); closeList();
+      const codeLines = [];
+      i++;
+      while (i < lines.length && !/^\s*```\s*$/.test(lines[i])) { codeLines.push(lines[i]); i++; }
+      i++;
+      html += '<pre><code>' + formatPlainText(codeLines.join('\n')) + '</code></pre>';
+      continue;
+    }
+
+    const header = line.match(/^(#{1,6})\s+(.*)$/);
+    if (header) {
+      flushPara(); closeList();
+      const level = Math.min(header[1].length, 4) + 2; // markdown h1-h4 -> html h3-h6 (h1/h2 reserved for page chrome)
+      html += '<h' + level + '>' + mdInline(escapeHtml(header[2])) + '</h' + level + '>';
+      i++; continue;
+    }
+
+    if (/^\s*-{3,}\s*$/.test(line) && !looksLikeDiff(raw)) {
+      flushPara(); closeList();
+      html += '<hr>';
+      i++; continue;
+    }
+
+    const blockquote = line.match(/^\s*>\s?(.*)$/);
+    if (blockquote) {
+      flushPara(); closeList();
+      html += '<blockquote>' + mdInline(escapeHtml(blockquote[1])) + '</blockquote>';
+      i++; continue;
+    }
+
+    const ul = line.match(/^\s*[-*]\s+(.*)$/);
+    const ol = line.match(/^\s*\d+\.\s+(.*)$/);
+
+    if (ul) {
+      flushPara();
+      if (listType !== 'ul') { closeList(); html += '<ul>'; listType = 'ul'; }
+      html += '<li>' + mdInline(escapeHtml(ul[1])) + '</li>';
+      i++; continue;
+    }
+    if (ol) {
+      flushPara();
+      if (listType !== 'ol') { closeList(); html += '<ol>'; listType = 'ol'; }
+      html += '<li>' + mdInline(escapeHtml(ol[1])) + '</li>';
+      i++; continue;
+    }
+
+    closeList();
+    if (line.trim() === '') {
+      flushPara();
+    } else {
+      paraBuf.push(line);
+    }
+    i++;
+  }
+  flushPara();
+  closeList();
+  return html;
+}
+
+// Dispatch for message content that was authored by the model/system (assistant,
+// system, user, exit) as opposed to raw tool/observation output. Falls back to
+// the plain diff-aware view for anything that's actually a patch dump.
+function renderProseHtml(text) {
+  if (looksLikeDiff(text)) {
+    return '<div class="prose">' + formatPlainText(text) + '</div>';
+  }
+  return '<div class="md">' + renderMarkdown(text) + '</div>';
+}
+
+// ---------- structured JSON tree renderer ----------
+// Renders any JS value as a collapsible, syntax-colored tree instead of a flat
+// JSON.stringify dump. Strings containing newlines render as a text block
+// rather than an escaped one-liner, since tool-call arguments (bash commands,
+// file contents, etc.) are usually where the readability problem actually is.
+let jidCounter = 0;
+function renderJsonValue(value, depth) {
+  if (value === null) return '<span class="jnull">null</span>';
+  const t = typeof value;
+  if (t === 'string') {
+    if (value.includes('\n')) {
+      return '<span class="jstr jmultiline">"' + escapeHtml(value) + '"</span>';
+    }
+    return '<span class="jstr">"' + escapeHtml(value) + '"</span>';
+  }
+  if (t === 'number') return '<span class="jnum">' + value + '</span>';
+  if (t === 'boolean') return '<span class="jbool">' + value + '</span>';
+  if (Array.isArray(value)) return renderJsonContainer(value, depth, true);
+  if (t === 'object') return renderJsonContainer(value, depth, false);
+  return escapeHtml(String(value));
+}
+
+function renderJsonContainer(value, depth, isArray) {
+  const entries = isArray ? value.map((v, i) => [i, v]) : Object.entries(value);
+  const open = isArray ? '[' : '{';
+  const close = isArray ? ']' : '}';
+  if (entries.length === 0) {
+    return '<span class="jpunct">' + open + close + '</span>';
+  }
+  const id = 'jt' + (jidCounter++);
+  const startOpen = depth < 2; // auto-expand shallow levels, collapse deep nesting by default
+  const rows = entries.map(([k, v]) => {
+    const keyHtml = isArray ? '' : '<span class="jkey">"' + escapeHtml(k) + '"</span><span class="jpunct">: </span>';
+    return '<div>' + keyHtml + renderJsonValue(v, depth + 1) + '</div>';
+  }).join('');
+  return (
+    '<span class="jtoggle" data-target="' + id + '">' + (startOpen ? '▾' : '▸') + '</span>' +
+    '<span class="jpunct">' + open + '</span> ' +
+    '<span class="jcount" data-target="' + id + '">' + entries.length + (isArray ? (entries.length === 1 ? ' item' : ' items') : (entries.length === 1 ? ' key' : ' keys')) + '</span>' +
+    '<div class="jchildren' + (startOpen ? '' : ' jcollapsed') + '" id="' + id + '">' + rows + '</div>' +
+    '<span class="jpunct">' + close + '</span>'
+  );
+}
+
+function attachJsonToggles(container) {
+  container.querySelectorAll('.jtoggle, .jcount').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const target = document.getElementById(el.dataset.target);
+      if (!target) return;
+      const collapsed = target.classList.toggle('jcollapsed');
+      const toggleIcon = container.querySelector('.jtoggle[data-target="' + el.dataset.target + '"]');
+      if (toggleIcon) toggleIcon.textContent = collapsed ? '▸' : '▾';
+    });
+  });
+}
+
+function renderJsonTree(value) {
+  const wrap = document.createElement('div');
+  wrap.className = 'jtree';
+  wrap.innerHTML = renderJsonValue(value, 0);
+  attachJsonToggles(wrap);
+  return wrap;
+}
+
+// ---------- tool call rendering ----------
+const TOOL_ICONS = { bash: '⌘', delegate_to_minion: '→', finish: '✓' };
+function renderToolCalls(toolCalls) {
+  const wrap = document.createElement('div');
+  toolCalls.forEach(tc => {
+    const fn = tc.function || {};
+    const name = fn.name || 'tool_call';
+    const block = document.createElement('div');
+    block.className = 'tool-call-block';
+    const head = document.createElement('div');
+    head.className = 'tool-call-head';
+    head.innerHTML = '<span class="tool-icon">' + (TOOL_ICONS[name] || '⚙') + '</span> ' + escapeHtml(name);
+    const body = document.createElement('div');
+    body.className = 'tool-call-body';
+    let args = fn.arguments;
+    let parsed = null;
+    if (typeof args === 'string') {
+      try { parsed = JSON.parse(args); } catch (e) { parsed = null; }
+    } else if (args && typeof args === 'object') {
+      parsed = args;
+    }
+    if (name === 'bash' && parsed && typeof parsed.command === 'string') {
+      // Special-case the common bash tool: show the command as a shell block, not a JSON tree.
+      const pre = document.createElement('pre');
+      pre.className = 'prose';
+      pre.style.margin = '0';
+      pre.innerHTML = '<span style="color:var(--text-dim)">$ </span>' + formatPlainText(parsed.command);
+      body.appendChild(pre);
+    } else if (parsed !== null) {
+      body.appendChild(renderJsonTree(parsed));
+    } else if (typeof args === 'string') {
+      const pre = document.createElement('pre');
+      pre.className = 'prose';
+      pre.style.margin = '0';
+      pre.textContent = args;
+      body.appendChild(pre);
+    }
+    block.appendChild(head);
+    block.appendChild(body);
+    wrap.appendChild(block);
+  });
+  return wrap;
+}
+
+// ---------- per-message extra info (usage, returncode, etc.) ----------
+function extraBadges(extra) {
+  if (!extra) return [];
+  const badges = [];
+  const usage = extra.response && extra.response.usage;
+  if (usage) {
+    const p = usage.prompt_tokens, c = usage.completion_tokens;
+    if (p !== undefined || c !== undefined) {
+      badges.push({ text: (p !== undefined ? fmtNum(p) : '?') + ' in / ' + (c !== undefined ? fmtNum(c) : '?') + ' out', cls: '' });
+    }
+  }
+  if (extra.cost) badges.push({ text: '$' + Number(extra.cost).toFixed(4), cls: '' });
+  if (extra.returncode !== undefined && extra.returncode !== null) {
+    badges.push({ text: 'exit ' + extra.returncode, cls: extra.returncode === 0 ? 'ok' : 'bad' });
+  }
+  if (extra.exception_info) badges.push({ text: 'exception', cls: 'bad' });
+  if (extra.exit_status) badges.push({ text: extra.exit_status, cls: extra.exit_status === 'Submitted' ? 'ok' : 'warn' });
+  return badges;
+}
+
+// ---------- message rendering ----------
+function messagePreview(msg) {
+  if (typeof msg.content === 'string' && msg.content.trim()) {
+    return msg.content.trim().slice(0, 140);
+  }
+  if (Array.isArray(msg.tool_calls) && msg.tool_calls.length) {
+    const fn = msg.tool_calls[0].function || {};
+    return (fn.name || 'tool_call') + '(...)';
+  }
+  return '(empty)';
+}
+
+function buildMessageEl(msg, i) {
+  const role = msg.role || 'unknown';
+  const hasContent = typeof msg.content === 'string' ? msg.content.trim().length > 0 : (msg.content != null);
+  const hasToolCalls = Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0;
+  const contentStr = typeof msg.content === 'string' ? msg.content : (msg.content != null ? JSON.stringify(msg.content, null, 2) : '');
+
+  const wrap = document.createElement('div');
+  wrap.className = 'msg ' + role;
+  wrap.dataset.searchText = (
+    (typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content || '')) + ' ' +
+    JSON.stringify(msg.tool_calls || '')
+  ).toLowerCase();
+
+  const isLong = contentStr.length > 1500;
+  const startCollapsed = (role === 'tool' || role === 'user') && isLong;
+
+  const head = document.createElement('div');
+  head.className = 'msg-head';
+
+  const left = document.createElement('div');
+  left.className = 'msg-head-left';
+  left.innerHTML = '<span class="msg-idx">#' + (i + 1) + '</span> ' + escapeHtml(role) +
+    (contentStr.length > 200 ? ' <span class="badge">' + fmtNum(contentStr.length) + ' chars</span>' : '');
+  if (!hasContent && !hasToolCalls) {
+    left.innerHTML += ' <span class="badge" style="opacity:0.5">' + escapeHtml(messagePreview(msg)) + '</span>';
+  }
+
+  const right = document.createElement('div');
+  right.className = 'msg-head-right';
+  extraBadges(msg.extra).forEach(b => {
+    const span = document.createElement('span');
+    span.className = 'badge' + (b.cls ? ' ' + b.cls : '');
+    span.textContent = b.text;
+    right.appendChild(span);
+  });
+  const toggleIcon = document.createElement('span');
+  toggleIcon.className = 'toggle-icon';
+  toggleIcon.textContent = startCollapsed ? '▶ show' : '▼ hide';
+  right.appendChild(toggleIcon);
+
+  head.appendChild(left);
+  head.appendChild(right);
+
+  const body = document.createElement('div');
+  body.className = 'msg-body' + (startCollapsed ? ' collapsed' : '');
+
+  if (hasContent) {
+    if (hasToolCalls) {
+      const label = document.createElement('div');
+      label.className = 'section-label';
+      label.textContent = 'reasoning';
+      body.appendChild(label);
+    }
+    const pre = document.createElement('div');
+    // Tool-role content is raw command/file output — render it as plain
+    // diff-aware text, never as markdown (a "# comment" at line-start in a
+    // Python file dump must not become an <h1>). Everything else (assistant/
+    // system/user/exit) is authored prose, rendered as markdown, with a
+    // fallback to plain diff view if it's actually a patch dump.
+    pre.innerHTML = (role === 'tool') ? formatPlainText(contentStr) : renderProseHtml(contentStr);
+    if (role === 'tool') pre.className = 'prose';
+    body.appendChild(pre);
+  }
+
+  if (hasToolCalls) {
+    if (hasContent) {
+      const label = document.createElement('div');
+      label.className = 'section-label';
+      label.textContent = msg.tool_calls.length > 1 ? 'tool calls' : 'tool call';
+      body.appendChild(label);
+    }
+    body.appendChild(renderToolCalls(msg.tool_calls));
+  }
+
+  if (!hasContent && !hasToolCalls) {
+    const pre = document.createElement('div');
+    pre.className = 'prose';
+    pre.style.color = 'var(--text-dim)';
+    pre.textContent = '(empty message)';
+    body.appendChild(pre);
+  }
+
+  head.addEventListener('click', () => {
+    const collapsed = body.classList.toggle('collapsed');
+    toggleIcon.textContent = collapsed ? '▶ show' : '▼ hide';
+  });
+
+  wrap.appendChild(head);
+  wrap.appendChild(body);
+  return wrap;
+}
+
+function computeTotals(messages) {
+  let prompt = 0, completion = 0, total = 0, haveAny = false;
+  messages.forEach(m => {
+    const u = m.extra && m.extra.response && m.extra.response.usage;
+    if (u) {
+      haveAny = true;
+      prompt += u.prompt_tokens || 0;
+      completion += u.completion_tokens || 0;
+      total += u.total_tokens || 0;
+    }
+  });
+  return haveAny ? { prompt, completion, total } : null;
+}
+
 function render(data) {
   dropHint.style.display = 'none';
   controls.style.display = 'flex';
+  searchBox.style.display = 'inline-block';
+  searchBox.value = '';
+  searchStatus.textContent = '';
   messagesEl.innerHTML = '';
 
   const info = data.info || {};
   const stats = info.model_stats || {};
+  const messages = data.messages || [];
+  const tokenTotals = computeTotals(messages);
+
   const bits = [];
   if (info.exit_status) bits.push('<span>exit: <b>' + escapeHtml(info.exit_status) + '</b></span>');
-  if (stats.instance_cost !== undefined) bits.push('<span>cost: <b>$' + stats.instance_cost.toFixed(4) + '</b></span>');
-  if (stats.api_calls !== undefined) bits.push('<span>api calls: <b>' + stats.api_calls + '</b></span>');
+  if (stats.instance_cost !== undefined) bits.push('<span>cost: <b>$' + Number(stats.instance_cost).toFixed(4) + '</b></span>');
+  if (stats.api_calls !== undefined) bits.push('<span>calls: <b>' + stats.api_calls + '</b></span>');
+  if (tokenTotals) bits.push('<span>tokens: <b>' + fmtNum(tokenTotals.total || (tokenTotals.prompt + tokenTotals.completion)) + '</b> (' + fmtNum(tokenTotals.prompt) + ' in / ' + fmtNum(tokenTotals.completion) + ' out)</span>');
   if (info.mini_version) bits.push('<span>mini-swe-agent: <b>' + escapeHtml(info.mini_version) + '</b></span>');
-  bits.push('<span>messages: <b>' + (data.messages || []).length + '</b></span>');
+  bits.push('<span>messages: <b>' + messages.length + '</b></span>');
   summaryEl.innerHTML = bits.join('');
 
-  (data.messages || []).forEach((msg, i) => {
-    const role = msg.role || 'unknown';
-    const content = msg.content != null ? msg.content : (msg.tool_calls ? JSON.stringify(msg.tool_calls, null, 2) : '(empty)');
-    const contentStr = typeof content === 'string' ? content : JSON.stringify(content, null, 2);
-
-    const wrap = document.createElement('div');
-    wrap.className = 'msg ' + role;
-
-    const head = document.createElement('div');
-    head.className = 'msg-head';
-    const isLong = contentStr.length > 1500;
-    const startCollapsed = role === 'tool' && isLong;
-    head.innerHTML =
-      '<span><span class="msg-idx">#' + (i + 1) + '</span>' + escapeHtml(role) +
-      ' <span class="char-count">(' + contentStr.length.toLocaleString() + ' chars)</span></span>' +
-      '<span class="toggle-icon">' + (startCollapsed ? '▶ show' : '▼ hide') + '</span>';
-
-    const body = document.createElement('div');
-    body.className = 'msg-body' + (startCollapsed ? ' collapsed' : '');
-    body.innerHTML = formatContent(contentStr);
-
-    head.addEventListener('click', () => {
-      const collapsed = body.classList.toggle('collapsed');
-      head.querySelector('.toggle-icon').textContent = collapsed ? '▶ show' : '▼ hide';
-    });
-
-    wrap.appendChild(head);
-    wrap.appendChild(body);
-    messagesEl.appendChild(wrap);
-  });
+  messages.forEach((msg, i) => messagesEl.appendChild(buildMessageEl(msg, i)));
 }
 
 document.getElementById('expandAll').addEventListener('click', () => {
   document.querySelectorAll('.msg-body').forEach(b => b.classList.remove('collapsed'));
-  document.querySelectorAll('.toggle-icon').forEach(t => t.textContent = '▼ hide');
+  document.querySelectorAll('.msg .toggle-icon').forEach(t => t.textContent = '▼ hide');
 });
 document.getElementById('collapseAll').addEventListener('click', () => {
-  document.querySelectorAll('.msg.tool .msg-body').forEach(b => {
-    if (b.textContent.length > 1500) b.classList.add('collapsed');
-  });
-  document.querySelectorAll('.msg.tool .toggle-icon').forEach(t => {
-    const body = t.closest('.msg').querySelector('.msg-body');
-    t.textContent = body.classList.contains('collapsed') ? '▶ show' : '▼ hide';
+  document.querySelectorAll('.msg').forEach(m => {
+    const body = m.querySelector('.msg-body');
+    if (body.textContent.length > 1500) {
+      body.classList.add('collapsed');
+      m.querySelector('.toggle-icon').textContent = '▶ show';
+    }
   });
 });
+
+let searchDebounce;
+searchBox.addEventListener('input', () => {
+  clearTimeout(searchDebounce);
+  searchDebounce = setTimeout(runSearch, 120);
+});
+function runSearch() {
+  const q = searchBox.value.trim().toLowerCase();
+  const all = document.querySelectorAll('.msg');
+  if (!q) {
+    all.forEach(m => m.classList.remove('dimmed'));
+    searchStatus.textContent = '';
+    return;
+  }
+  let matches = 0;
+  all.forEach(m => {
+    const hit = (m.dataset.searchText || '').includes(q);
+    m.classList.toggle('dimmed', !hit);
+    if (hit) matches++;
+  });
+  searchStatus.textContent = matches + ' match' + (matches === 1 ? '' : 'es');
+}
 </script>
 </body>
 </html>
