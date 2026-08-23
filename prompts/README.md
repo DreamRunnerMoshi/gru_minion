@@ -6,6 +6,17 @@ Actual prompt text for Gru, for the next experiment (exp2 — first experiment t
 
 ## Revision history
 
+**2026-08-22, delegation criterion + no taxonomy.** Two substantive changes, plus three that unblock them. Full rationale in [gru-loop.md](./gru-loop.md) and [review.md](../review.md).
+
+- **The gate for delegating changed from verifiability to token displacement.** Delegate work that is *token-heavy and judgement-light*, with a tool-first escape hatch (a deterministic shell command is a check, not a delegation) and a decide-first guard (a minion cannot execute a judgement Gru has not made). The old verifiability gate could not be satisfied by half the work it governed — [PLAN_FORMAT.md](../PLAN_FORMAT.md) had to concede context-gathering *"often has no check at all."* Verification is now a per-delegation requirement (mandatory when `returns: verdict`), not the thing that decides what gets delegated.
+- **The `type` taxonomy is gone.** `context_gather` / `locate` / `synthesize` encoded our guess about which work is delegable; that guess is the hypothesis under test, so Gru is no longer asked to sort work into our categories. Two mechanically necessary dimensions replace it: `returns` (`findings` | `verdict` — what Gru sees) and `mode` (`oneshot` | `agentic` — what it costs).
+- **`think` and `run_check` are real actions.** The prompt previously offered "reason and decide directly" while the harness rejected any turn without a tool call, so delegating was Gru's only available action — making delegation *choice* unmeasurable. And Gru had no way to re-run a corrected check without a full no-op minion session (exp2's `t4`/`t6`, ~20k tokens).
+- **One action per turn is enforced in the parser.** `parallel_tool_calls: false` was silently dropped by Ollama in exp2 and Gru issued delegations in pairs — 4 of 6 in the surviving trajectory were decided without seeing the previous result. The interleaved loop this folder describes was never actually exercised.
+- **Delegations report their token cost back to Gru**, which was previously asked to prefer low-token work while being shown no token counts.
+
+Sections below that refer to `type`, `search_strategy`, or verifiability-as-gate describe the superseded design and are kept for the reasoning trail.
+
+
 **2026-08-21, corrected**: the first draft of this folder had Gru do two separate calls — reason about the *entire* plan, then convert that whole plan to JSON — before any minion ran, with a distinct third "escalation" call for handling failures. That contradicted two things already established: [02-gru-minion-protocol.md](../design/architecture/02-gru-minion-protocol.md)'s framing that Gru's planning "is not one-shot generation," and the planning-literature evidence that LLM planning accuracy collapses sharply once reality diverges from what was assumed upfront ([PlanBench-XL](../literature-review/2606.22388-planbench-xl.md): 51.9% → 11.36% for GPT-5.4 once tools are blocked/corrupted). Corrected to: **Gru runs one continuous session per task** — [gru-loop.md](./gru-loop.md) — deciding one step at a time what to delegate next, not committing to a full decomposition before anything has run.
 
 ## Gru's one prompt: the continuous loop

@@ -24,56 +24,55 @@ Gru's own restatement of the task, not copied verbatim from the ticket — this 
 
 ## `delegate_to_minion` — issued live, one per turn, as many times as needed
 
+**Revised 2026-08-22**: the `type` taxonomy (`context_gather` / `locate` / `synthesize`) is gone, along with `search_strategy`. Those fields encoded our own guess about which work is delegable, and that guess is now the thing being tested — so Gru is no longer asked to classify work into our categories. Two dimensions replace it, both set by Gru, and each governs exactly one mechanical consequence:
+
 ```json
 {
   "id": "t3",
-  "type": "synthesize",
+  "returns": "verdict",
+  "mode": "agentic",
   "description": "Implement SmsVerifier conforming to the Verifier interface located in t1",
   "inputs": {
     "from": ["t1", "t2"],
+    "read_paths": [],
     "scope": "src/auth/verification/"
   },
-  "search_strategy": null,
   "verification": {
     "checks": [
-      {"type": "test", "command": "pytest tests/auth/test_sms_verifier.py", "expect": "pass"},
-      {"type": "test", "command": "pytest tests/auth/test_email_verifier.py", "expect": "pass"}
+      "pytest tests/auth/test_sms_verifier.py",
+      "pytest tests/auth/test_email_verifier.py"
     ]
   },
   "output_contract": "diff + list of touched files"
 }
 ```
 
-Field notes:
+- **`id`** — assigned by the orchestrator when the delegation is issued; referenced by later delegations' `inputs.from`.
+- **`returns`** — the only thing that changes what Gru sees back.
+  - `findings`: the minion's actual output is returned. Used where the content *is* the deliverable and no check could settle it.
+  - `verdict`: only pass/fail, computed by the orchestrator independently re-running `verification.checks` against the state the minion left behind — never the minion's own claim. Requires at least one check; there is nothing to return without one.
+- **`mode`** — the only thing that changes what a delegation *costs*.
+  - `oneshot`: a single model call, text in and text out, no shell. Its material must be supplied via `inputs.from` and/or `inputs.read_paths`, since it has no way to go find anything.
+  - `agentic`: a full bash tool loop against the shared testbed. Roughly an order of magnitude more expensive — exp2's `t1` spent 105,770 tokens reading one file this way.
+- **`inputs`** — `from` names prior delegation ids (resolved by the orchestrator to their real output, raw passthrough, no summarisation step); `read_paths` names files the orchestrator reads and hands over verbatim; `scope` bounds where the minion may operate.
+- **`verification.checks`** — a list of shell commands, exit 0 means pass. Mandatory when `returns: verdict`, optional otherwise (a coverage bound on findings, where one genuinely exists). **A delegation that touches tests or verification logic can never be the thing that verifies itself** — whatever confirms it worked has to be a separate, later check it does not control.
+- **`output_contract`** — what this delegation hands back and in what shape. For `findings` delegations the minion prompt additionally requires a coverage receipt: the exact commands run and their full output, every candidate found including dismissed ones with reasons, and what was searched for and not found.
 
-- **`id`** — assigned when the delegation is issued (not pre-planned); referenced by later delegations' `inputs.from`.
-- **`type`** — constrains what `verification` and the return value look like. Only three values now (`design_decision` removed — it was never actually delegated to a minion; it's just Gru reasoning directly, no tool call):
-  - `context_gather` — read/summarize/extract (docs, code, existing patterns). Returns its actual findings to Gru — see "Return shape" below. Verification is usually the hard case (completeness); often no check exists at all, and that's an accepted residual, not a defect to paper over.
-  - `locate` — find specific artifacts (test files, call sites, config references). Narrower than `context_gather`; often mechanically checkable (count/existence bounds, graph-traversal coverage per [DESIGN.md](./DESIGN.md)'s structural-index proposal).
-  - `synthesize` — write/modify code. **Verification is mandatory and mechanical** — a check that demonstrates the specific behavior now works, same pattern as SWE-bench's `FAIL_TO_PASS`/`PASS_TO_PASS` but self-authored (existing tests, or new ones written for this delegation) rather than the hidden gold tests, which Gru has no access to — same distinction as `final_verification` below, just at delegation scope instead of whole-session scope. Returns pass/fail only, not the content — see "Return shape" below.
-- **`inputs`** — `from` is a list of prior delegation ids (symbolic reference — Gru issues a delegation before knowing what an earlier one will concretely find, so it can't reference actual file paths yet; the orchestrator resolves `from` to the referenced delegation's real output at execution time, via raw passthrough — no extraction/summarization step). `scope` bounds where the minion is allowed to operate, both as a safety rail and to keep mechanical checks well-defined.
-- **`search_strategy`** — required for `context_gather`/`locate`, omitted for `synthesize`. This is where "Gru decides how thoroughly to search, doesn't delegate wholesale" lives concretely — e.g. `{"method": "graph_traversal", "from_symbol": "is_verified", "max_hops": 2}` or `{"method": "keyword", "patterns": ["verification_type", "is_verified"]}`. A missing search strategy on a `context_gather`/`locate` delegation is a defect — it usually means Gru delegated "gather context on X" wholesale, under-specifying completeness.
-- **`verification`** — for `synthesize`, mandatory, always mechanical, never absent:
-  ```json
-  {"checks": [
-    {"type": "test", "command": "...", "expect": "pass"},
-    {"type": "graph_traversal", "symbol": "verify_email", "max_hops": 2, "expect_min_nodes": 5},
-    {"type": "file_exists", "path": "..."}
-  ]}
-  ```
-  For `context_gather`/`locate`, optional — a coverage/bound check where one genuinely exists (e.g. "at least N call sites found" as a floor), absent otherwise. **A delegation that touches tests or verification logic can never be the thing that verifies itself** — whatever confirms it worked has to be a separate, later check that delegation doesn't control.
-- **`output_contract`** — what this delegation hands back. For `context_gather`/`locate`, this is the shape of the findings Gru actually receives (see below). For `synthesize`, this is what a *later* delegation's `inputs.from` would reference if it needs to point at this one's result (e.g. "diff + list of touched files") — Gru itself only sees pass/fail for `synthesize`, not this content directly.
+## Gru's other actions
 
-There is no `escalation_policy` field anymore — a failed check is something Gru sees and reacts to in its own next reasoning turn, not a declared policy attached to the delegation upfront.
+Not every turn is a delegation. Added 2026-08-22:
+
+- **`think {note}`** — a turn spent on a decision rather than on work. Nothing executes, no minion is charged. This exists because the prompt has always told Gru it could "reason and decide directly" while the harness rejected any turn without a tool call, leaving delegation as the only available action.
+- **`run_check {checks}`** — run verification commands directly against the testbed and see the result. For confirming a claim or re-running a corrected check, not for exploring the repository. Replaces the pattern in exp2 where Gru spawned entire no-op minion sessions (`t4`, `t6`) purely to re-run a check whose command it had written incorrectly.
 
 ## Return shape — what Gru actually sees back
 
-This is the part that most changed from the original design, and it's not uniform across types:
-
-| `type` | What Gru receives |
+| `returns` | What Gru receives |
 |---|---|
-| `context_gather`, `locate` | The actual findings, per `output_contract` — a summary, file list, extracted content. No independent check most of the time; the content *is* the deliverable, and Gru's next step depends on reading it. |
-| `synthesize` | Pass or fail from the mechanical check only, plus a reference to the result (not the diff itself). Gru does not re-read the content — the check already established what it needed to know. Re-verifying it would just be redoing the minion's work (the "verifiability trap"). |
+| `findings` | The minion's actual output, per `output_contract`, plus the delegation's token cost. |
+| `verdict` | Pass or fail from the orchestrator's own run of `verification.checks`, plus the check output and the token cost — not the content. Gru does not re-read the work; the check already established what it needed to know (the "verifiability trap"). |
+
+Every delegation's observation carries its token cost, so that "prefer token-heavy, judgement-light work" is something Gru can act on rather than comply with on faith.
 
 ## `finish` — ends the session, gates the whole result
 
