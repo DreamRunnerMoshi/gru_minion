@@ -1,14 +1,27 @@
-"""Gru's "environment": doesn't run bash, dispatches delegate_to_minion (spawns a
-minion sub-session against the shared persistent testbed) and finish (independently
-verifies + raises Submitted). See prompts/README.md and prompts/gru-loop.md for the
-design this implements: Gru never re-verifies content a real check already
-established (the "verifiability trap"), and delegation return shape depends on type
-(findings for context_gather/locate, pass/fail-only for synthesize).
+"""Gru's "environment": doesn't run bash, dispatches Gru's four actions —
+delegate_to_minion, think, run_check and finish. See prompts/README.md and
+prompts/gru-loop.md for the design this implements.
+
+Revised 2026-08-22 alongside orchestrator/gru_toolcall.py:
+
+- **Delegation shape is chosen by Gru, not by our taxonomy.** `returns` decides
+  what comes back (content vs. a pass/fail computed here from real checks);
+  `mode` decides what it costs (a single model call vs. a full bash loop).
+- **`mode="oneshot"` exists because exp2 ran every delegation as a 40-step agentic
+  loop.** t1 spent 105,770 tokens to read one 317-line file and summarise it — work
+  that is a single completion. Delegating menial work has to be *cheaper* than doing
+  it inline or the whole criterion is unprofitable to follow.
+- **Every delegation reports its own token cost back to Gru.** Gru was previously asked
+  to prefer low-token work while being shown no token counts.
+- **`think` and `run_check`** close two gaps: Gru had no action other than delegating,
+  and no way to re-run a corrected check without spawning a no-op minion session.
 """
 
 import logging
 from pathlib import Path
 from typing import Any
+
+import litellm
 
 from minisweagent.agents.default import DefaultAgent
 from minisweagent.environments.docker import DockerEnvironment
@@ -16,6 +29,13 @@ from minisweagent.exceptions import Submitted
 from minisweagent.models.litellm_model import LitellmModel
 
 from orchestrator.token_usage import extract_token_usage
+
+_ONESHOT_SYSTEM = (
+    "You are a minion — the execution role in a two-tier coding-agent system. You were handed exactly "
+    "one bounded piece of work by Gru, the planning role, along with all the material needed to do it. "
+    "You have no shell and no repository access: work only from the material below. Do the work and "
+    "return exactly what the output contract asks for, nothing else — no preamble, no commentary."
+)
 
 
 class GruEnvironment:
@@ -42,6 +62,7 @@ class GruEnvironment:
         self.delegation_counter = 0
         # per-role cost accounting (see prompts/README.md "Cost attribution")
         self.minion_records: list[dict[str, Any]] = []
+        self.gru_action_log: list[dict[str, Any]] = []
 
     # -- Environment protocol (mirrors DockerEnvironment's shape) --
 
@@ -56,14 +77,20 @@ class GruEnvironment:
                 }
             },
             "minion_records": self.minion_records,
+            "gru_action_log": self.gru_action_log,
         }
 
     # -- dispatch --
 
     def execute(self, action: dict, cwd: str = "", *, timeout: int | None = None) -> dict[str, Any]:
         kind = action.get("kind")
+        self.gru_action_log.append({"kind": kind, "args": action.get("args", {})})
         if kind == "delegate_to_minion":
             return self._delegate(action["args"])
+        if kind == "think":
+            return self._think(action["args"])
+        if kind == "run_check":
+            return self._run_check_action(action["args"])
         if kind == "finish":
             return self._finish(action["args"])
         raise ValueError(f"GruEnvironment cannot execute action of kind {kind!r}")
@@ -74,8 +101,7 @@ class GruEnvironment:
 
     def _run_checks(self, checks: list[str]) -> tuple[bool, str]:
         """Run check commands directly against the shared testbed. Real, independent
-        pass/fail — never trusts a minion's own report. See prompts/README.md
-        'Trust the mechanical signal, don't re-verify it'."""
+        pass/fail — never trusts a minion's own report."""
         if not checks:
             return True, "(no checks specified)"
         outputs = []
@@ -88,30 +114,68 @@ class GruEnvironment:
             outputs.append(f"$ {check_cmd}\n(exit {out['returncode']})\n{tail}")
         return all_passed, "\n\n".join(outputs)
 
-    def _delegate(self, args: dict) -> dict[str, Any]:
-        delegation_id = self._next_id()
-        subtask_type = args["type"]
+    # -- non-delegating actions --
 
-        # Normalize optional fields the tool schema allows to be omitted — Jinja's
-        # StrictUndefined (same as mini-swe-agent's own templates use) errors on a
-        # missing dict key, not just a falsy value, so `subtask.search_strategy` in
-        # the minion template needs the key present even when Gru omitted it.
-        args = {**args}
-        args.setdefault("search_strategy", None)
-        args.setdefault("verification", {})
-        args["verification"] = {"checks": [], **args["verification"]}
-        args.setdefault("inputs", {})
-        args["inputs"] = {"from": [], **args["inputs"]}
+    def _think(self, args: dict) -> dict[str, Any]:
+        """A turn spent deciding rather than delegating. Nothing runs; this exists so that
+        'reason and decide directly' is an action Gru can actually take, and so that the
+        choice between deciding and delegating is observable in the trajectory."""
+        return {
+            "output": "(noted — nothing was executed and no minion was charged)",
+            "returncode": 0,
+            "exception_info": "",
+        }
 
-        prior_refs = args.get("inputs", {}).get("from") or []
-        if prior_refs:
-            prior_context = "\n\n".join(
-                f"--- {ref} ---\n{self.delegation_outputs.get(ref, '[no output recorded for this id]')}"
-                for ref in prior_refs
-            )
-        else:
-            prior_context = "(none)"
+    def _run_check_action(self, args: dict) -> dict[str, Any]:
+        checks = args.get("checks", [])
+        passed, check_output = self._run_checks(checks)
+        status = "PASS" if passed else "FAIL"
+        return {
+            "output": f"Checks: {status}\n\n{check_output}",
+            "returncode": 0 if passed else 1,
+            "exception_info": "",
+        }
 
+    # -- delegation --
+
+    def _gather_inputs(self, inputs: dict) -> str:
+        """Assemble the material a delegation was told it needs: prior delegation outputs
+        (raw passthrough) plus any files the orchestrator was asked to hand over verbatim."""
+        parts = []
+        for ref in inputs.get("from") or []:
+            parts.append(f"--- {ref} ---\n{self.delegation_outputs.get(ref, '[no output recorded for this id]')}")
+        for path in inputs.get("read_paths") or []:
+            out = self.docker_env.execute({"command": f"cat {path}"})
+            body = out["output"] if out["returncode"] == 0 else f"[could not read: exit {out['returncode']}]"
+            parts.append(f"--- {path} ---\n{body}")
+        return "\n\n".join(parts) if parts else "(none)"
+
+    def _run_oneshot(self, args: dict, material: str) -> tuple[str, dict[str, int], int]:
+        """A single model call: text in, text out, no shell. Returns (output, usage, n_calls)."""
+        model_kwargs = {
+            k: v for k, v in self.minion_model_kwargs.get("model_kwargs", {}).items() if k != "parallel_tool_calls"
+        }
+        prompt = (
+            f"<task>\n{args['description']}\n</task>\n\n"
+            f"<output_contract>\n{args['output_contract']}\n</output_contract>\n\n"
+            f"<material>\n{material}\n</material>"
+        )
+        response = litellm.completion(
+            model=self.minion_model_kwargs["model_name"],
+            messages=[{"role": "system", "content": _ONESHOT_SYSTEM}, {"role": "user", "content": prompt}],
+            **model_kwargs,
+        )
+        text = response.choices[0].message.content or ""
+        usage = getattr(response, "usage", None)
+        tokens = {
+            "prompt_tokens": getattr(usage, "prompt_tokens", 0) or 0,
+            "completion_tokens": getattr(usage, "completion_tokens", 0) or 0,
+            "total_tokens": getattr(usage, "total_tokens", 0) or 0,
+        }
+        return text, tokens, 1
+
+    def _run_agentic(self, args: dict, material: str, delegation_id: str) -> tuple[str, dict[str, int], int, str, str]:
+        """A full bash tool loop against the shared testbed."""
         minion_model = LitellmModel(**self.minion_model_kwargs)
         minion_output_path = None
         if self.output_dir is not None:
@@ -124,45 +188,81 @@ class GruEnvironment:
             output_path=minion_output_path,
             **self.minion_agent_kwargs,
         )
+        result = minion_agent.run(subtask=args, prior_delegation_outputs=material)
+        return (
+            result.get("submission", ""),
+            extract_token_usage(minion_agent.messages),
+            minion_agent.n_calls,
+            result.get("exit_status", ""),
+            str(minion_output_path) if minion_output_path else "",
+        )
 
-        self.logger.info(f"[{delegation_id}] delegating ({subtask_type}): {args['description'][:120]}")
-        result = minion_agent.run(subtask=args, prior_delegation_outputs=prior_context)
-        submission = result.get("submission", "")
+    def _delegate(self, args: dict) -> dict[str, Any]:
+        delegation_id = self._next_id()
+
+        # Normalise optional fields the schema allows to be omitted — Jinja's StrictUndefined
+        # (as mini-swe-agent's own templates use) errors on a missing key, not just a falsy value.
+        args = {**args}
+        args.setdefault("verification", {})
+        args["verification"] = {"checks": [], **(args["verification"] if isinstance(args["verification"], dict) else {})}
+        args.setdefault("inputs", {})
+        args["inputs"] = {"from": [], "read_paths": [], **args["inputs"]}
+
+        returns = args["returns"]
+        mode = args["mode"]
+        material = self._gather_inputs(args["inputs"])
+
+        self.logger.info(f"[{delegation_id}] delegating ({mode}/{returns}): {args['description'][:120]}")
+
+        exit_status, trajectory_path = "", ""
+        if mode == "oneshot":
+            submission, tokens, n_calls = self._run_oneshot(args, material)
+            exit_status = "Completed"
+        else:
+            submission, tokens, n_calls, exit_status, trajectory_path = self._run_agentic(
+                args, material, delegation_id
+            )
 
         self.minion_records.append(
             {
                 "delegation_id": delegation_id,
-                "type": subtask_type,
+                "returns": returns,
+                "mode": mode,
                 "description": args["description"],
-                "api_calls": minion_agent.n_calls,
-                "cost": minion_agent.cost,  # will be 0.0 for self-hosted models — see token counts below
-                **extract_token_usage(minion_agent.messages),
-                "exit_status": result.get("exit_status", ""),
-                "trajectory_path": str(minion_output_path) if minion_output_path else None,
+                "scope": args["inputs"].get("scope", ""),
+                "api_calls": n_calls,
+                **tokens,
+                "exit_status": exit_status,
+                "trajectory_path": trajectory_path or None,
             }
         )
 
-        if subtask_type == "synthesize":
-            checks = args.get("verification", {}).get("checks", [])
-            passed, check_output = self._run_checks(checks)
+        # Gru is asked to prefer work that displaces many tokens for little judgement. It can
+        # only act on that if it is told what each delegation actually cost.
+        cost_line = (
+            f"[{delegation_id} cost: {tokens['total_tokens']:,} tokens, {n_calls} model call"
+            f"{'' if n_calls == 1 else 's'}, mode={mode}]"
+        )
+
+        if returns == "verdict":
+            passed, check_output = self._run_checks(args["verification"]["checks"])
             self.delegation_outputs[delegation_id] = submission  # kept for a later inputs.from, not shown to Gru
             status = "PASS" if passed else "FAIL"
             observation = (
-                f"Delegation {delegation_id} ({subtask_type}): {status}\n\n"
+                f"Delegation {delegation_id}: {status}\n{cost_line}\n\n"
                 f"{check_output}\n\n"
-                "(This is the check result, not the diff — the content itself isn't shown to you; "
-                "see prompts/README.md on why synthesize delegations return pass/fail only.)"
+                "(This is the check result, not the content — you asked for a verdict, so the work itself "
+                "isn't shown to you. Re-deriving what the check already settled is wasted effort.)"
             )
             return {"output": observation, "returncode": 0 if passed else 1, "exception_info": ""}
 
         self.delegation_outputs[delegation_id] = submission
-        observation = f"Delegation {delegation_id} ({subtask_type}) findings:\n\n{submission}"
+        observation = f"Delegation {delegation_id} findings:\n{cost_line}\n\n{submission}"
         return {"output": observation, "returncode": 0, "exception_info": ""}
 
     def _finish(self, args: dict) -> dict[str, Any]:
-        """A failing final_verification must NOT end the session — per prompts/gru-loop.md,
-        that's the signal for Gru to reconsider its approach broadly and keep working, not a
-        terminal state. Only a passing check actually raises Submitted."""
+        """A failing final_verification must NOT end the session — that's the signal for Gru to
+        reconsider its approach and keep working, not a terminal state."""
         checks = args.get("final_verification", {}).get("checks", [])
         passed, check_output = self._run_checks(checks)
         diff_out = self.docker_env.execute({"command": "git diff"})

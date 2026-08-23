@@ -7,7 +7,7 @@ import litellm
 
 from minisweagent.models.litellm_model import LitellmModel
 
-from orchestrator.gru_toolcall import DELEGATE_TOOL, FINISH_TOOL, format_gru_observation_messages, parse_gru_actions
+from orchestrator.gru_toolcall import GRU_TOOLS, format_gru_observation_messages, parse_gru_actions
 
 
 class GruModel(LitellmModel):
@@ -16,7 +16,7 @@ class GruModel(LitellmModel):
             return litellm.completion(
                 model=self.config.model_name,
                 messages=messages,
-                tools=[DELEGATE_TOOL, FINISH_TOOL],
+                tools=GRU_TOOLS,
                 **(self.config.model_kwargs | kwargs),
             )
         except litellm.exceptions.AuthenticationError as e:
