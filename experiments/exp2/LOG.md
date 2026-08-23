@@ -38,7 +38,7 @@ python3 -m swebench.harness.run_evaluation --predictions_path predictions_all5.j
 
 ## Results
 
-| Instance | Resolved | Gru's own verdict | Gru calls | Gru tokens | Minions | Minion tokens | Total tokens | Wall-clock |
+| Instance | Resolved† | Gru's own verdict | Gru calls | Gru tokens | Minions | Minion tokens | Total tokens | Wall-clock |
 |---|---|---|---|---|---|---|---|---|
 | astropy-12907 | ✅ | ✅ agrees | 5 | 87,226 | 6 | 340,579 | 427,805 | 1520s |
 | astropy-14182 | ❌ | ✅ **wrong** | 4 | 64,307 | 4 | 601,023 | 665,330 | 1172s |
@@ -48,6 +48,8 @@ python3 -m swebench.harness.run_evaluation --predictions_path predictions_all5.j
 | **Total** | 3/5 | 3/5 agree | 37 | 478,886 | 29 | 3,701,786 | 4,180,672 | ~2h56m |
 
 **3/5 resolved (60%)** · Gru 478,886 tok (11.5% of total) · Minions 3,701,786 tok (88.5%) · 0 infra failures/empty patches/errors · no $ metered cost (self-hosted) · ~2h56m combined GPU-active wall-clock across 5 sequential sessions.
+
+† Machine-verified for `astropy-12907` only; the other four verdicts are transcribed, not harness output — see [NOTES.md#verdict-provenance](./NOTES.md#verdict-provenance).
 
 ## Issues encountered
 
@@ -59,7 +61,7 @@ python3 -m swebench.harness.run_evaluation --predictions_path predictions_all5.j
 
 ## Findings
 
-- **3/5 resolved (60%) matches exp0's Haiku baseline but regresses from exp1's solo-Qwen baseline (4/5, 80%)** on the identical model and instance set. Holding the model fixed, the Gru/minion architecture in this raw form was net-negative on this small sample, not neutral — a real result, even though Phase 1 wasn't designed to test the cost hypothesis.
+- **3/5 resolved (60%) against exp1's 4/5 on the identical model and instance set**, differing on one instance (`astropy-14182`) — no detectable difference at n=5 (Fisher exact p=1.0; McNemar p=1.0 paired). Phase 1's scoping rule says resolve rate here is not signal either way ([04-machine-config.md](../../design/infra/04-machine-config.md) §9), and with 4 of 5 verdicts transcribed rather than machine-verified, this is recorded rather than interpreted.
 - **Gru's self-authored `final_verification` passed in all 5 runs but only agreed with the real evaluation in 3/5** — a direct, measured instance of the caveat already written into `prompts/gru-loop.md` (passing your own proxy check doesn't guarantee the hidden evaluation agrees). See [NOTES.md#verification-divergence](./NOTES.md#verification-divergence--gru-was-confidently-wrong-twice) for both disagreement cases in detail.
 - **`astropy-14365` produced the identical `re.IGNORECASE` fix across three independent experiments** (exp0 Haiku, exp1 solo Qwen, this run's Gru+minion) — including this run's Gru explicitly delegating a context-gathering step aimed at finding every place case-sensitivity lives. Strongest evidence yet that this specific blind spot is a property of the task, not of any one model or architecture.
 - **`astropy-14182` regressed from resolved (exp1) to unresolved (this run)**: Gru's own reproduction script and self-authored regression test both passed, but encoded the same narrow scope as the PR's literal example — the same blind spot exp0's Haiku had on this exact instance, recurring through a more elaborate plan-and-verify process that didn't catch it. See NOTES.md for the patch comparison.
@@ -68,8 +70,8 @@ python3 -m swebench.harness.run_evaluation --predictions_path predictions_all5.j
 
 ## Conclusion & next steps
 
-The harness runs end-to-end — delegation, independent verification, inline retry, and the finish-rejection-continues-session path all fired for real during this batch and worked as designed, which was Phase 1's actual goal. But the same-model comparison against exp1 shows the architecture, unfixed, cost more and resolved less on this small sample. Next: fix the two efficiency issues already identified this session (verbatim-reproduction duplication in `output_contract`, redundant re-verification delegations) before any further same-model runs, since some of this run's regression and cost story may be attributable to fixable prompt issues rather than an inherent property of the architecture — then proceed to Phase 2's actual frontier-Gru condition, which is the real test of the cost hypothesis this project exists to answer.
+The harness runs end-to-end — delegation, independent verification, and inline retry after a failed check all fired for real during this batch (`astropy-12907`'s t3→t4→t6) and worked as designed, which was Phase 1's actual goal. The finish-rejection path did **not** fire: `final_verification` passed on the first `finish` attempt in all 5 runs, so that branch remains untested. Resolve rate and token spend are not Phase 1 signal (§9), so the exp1 comparison is recorded above rather than concluded from. Next: fix the two efficiency issues already identified this session (verbatim-reproduction duplication in `output_contract`, redundant re-verification delegations) before any further same-model runs, since some of this run's regression and cost story may be attributable to fixable prompt issues rather than an inherent property of the architecture — then proceed to Phase 2's actual frontier-Gru condition, which is the real test of the cost hypothesis this project exists to answer.
 
 ## Artifacts
 
-Under `experiments/exp2/`: `trajectories/` (full Gru + minion trajectories for `astropy-12907` only — lost for the other 4 instances, see Issues), `results/<instance>/prediction.json` + `cost_summary.json` for all 5 instances, `results/predictions_all5.json`, `results/summary_report_5instances.json` (reconstructed evaluation verdict, see file for caveat), [`NOTES.md`](./NOTES.md) (token/verification-divergence/reward-hacking methodology behind the Findings above).
+Under `experiments/exp2/`: `trajectories/` (full Gru + minion trajectories for `astropy-12907` only — lost for the other 4 instances, see Issues), `results/<instance>/prediction.json` + `cost_summary.json` for all 5 instances, `results/predictions_all5.json`, `results/summary_report_5instances.json` (**transcribed** evaluation verdict for 4 of 5 instances — see [NOTES.md#verdict-provenance](./NOTES.md#verdict-provenance)), `results/astropy-12907/eval_report.json` (the one real harness report), [`NOTES.md`](./NOTES.md) (token/verification-divergence/reward-hacking methodology behind the Findings above).

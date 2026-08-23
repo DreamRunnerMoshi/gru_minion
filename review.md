@@ -425,10 +425,13 @@ Applied to `orchestrator/` and `prompts/` on 2026-08-22, after the review discus
 | — | `cce461c`'s pre-finish test-recheck rule preserved through the prompt rewrite, with two dangling references updated (`locate`, "the overconfidence ground rule above"). Still unvalidated — it has never been reached in a completed session | preserved, unvalidated |
 | — | Every delegation's token cost returned in its observation — Gru was asked to prefer low-token work while being shown no token counts | implemented, unvalidated |
 | `R13` | Prompt left deliberately neutral on prescriptiveness rather than instructing either way | ablation still to run |
+| `R3` | exp2's `LOG.md` Results now marks the verdict provenance (`Resolved†`) where the number is, with the methodology and the recovery command in `NOTES.md#verdict-provenance` | **editorial half done**; the verdict is still transcribed for 4 of 5 — `run_evaluation` not re-run |
+| `R4` | exp2's Findings bullet now records the exp1 comparison without interpreting it — cites Phase 1's §9 scoping rule and the n=5 statistics; "net-negative", "a real result" and the gating language are gone from the Conclusion | done |
+| `R11` | Same Conclusion edit: the claim that the finish-rejection path "fired for real during this batch" is replaced with what the artifacts support — it never fired, `final_verification` passed on the first `finish` in all 5 runs | done |
 | `R1` | **Gru read-only repo access — declined.** Would make the architecture Stencil's `/prewalk`, a different system than the one under test. `run_check` runs commands for verification only, and that boundary now lives in the prompt rather than the schema | declined by design |
 | `R15` | **Gru verification pass over returned content — declined.** Would not have caught either exp2 failure, is the weakest verification available per the project's own LLM-Modulo citation, and reinstates the per-completion Gru cost `DESIGN.md` rejected | declined by design |
 
-Still open and unaddressed: `R2`, `R3`, `R4`, `R7`, `R8`, `R9`, `R10`, `R11`, `R12`, `R14`, and the literature-review corrections in [Source verification](#source-verification). `R3` and `R4` remain the blocking items — both editorial, neither done.
+Still open and unaddressed: `R2`, `R7`, `R8`, `R9`, `R10`, `R12`, `R14`, and the literature-review corrections in [Source verification](#source-verification). The one remaining blocker is the non-editorial half of `R3` — re-running `run_evaluation` on the intact `predictions_all5.json`, which needs a VM rather than an edit.
 
 ---
 
@@ -450,8 +453,8 @@ Stated specifically, because it is why the above is worth fixing rather than res
 
 | # | Action | Cost | Blocks |
 |---|---|---|---|
-| 1 | Re-run `run_evaluation` on exp2's intact `predictions_all5.json`; replace the reconstructed summary (`R3`) | ~1 VM-hour | everything downstream |
-| 2 | Strike exp2's resolve-rate interpretation; keep the observations (`R4`) | editorial | Phase 1 scope integrity |
+| 1 | Re-run `run_evaluation` on exp2's intact `predictions_all5.json`; replace the transcribed summary (`R3`) | ~1 VM-hour | everything downstream |
+| ~~2~~ | ~~Strike exp2's resolve-rate interpretation (`R4`)~~ | done | — |
 | 3 | Correct the three literature-review entries; fix the Stencil attribution ([Source verification](#source-verification)) | editorial | all prior-art reasoning |
 | ~~4~~ | ~~Build coverage receipts + negative-space reporting (`R15`)~~ | done | — |
 | ~~5~~ | ~~Fix `parallel_tool_calls` / enforce single-action (`R5`)~~ | done | — |

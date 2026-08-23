@@ -2,6 +2,30 @@
 
 Methodology and worked evidence behind the terse Findings bullets in [LOG.md](./LOG.md). Read this only if you need to check how a claim was derived; `LOG.md` alone should be enough for everything else.
 
+## Verdict provenance
+
+`results/summary_report_5instances.json` is **not** harness output. Its own `note` field says so: *"reconstructed from two separate run_evaluation invocations ... the evaluation VM was destroyed before saving the raw per-run report files, this is the merged verdict reconstructed from conversation record, not a machine-generated file."*
+
+| Instance | Verdict source |
+|---|---|
+| `astropy-12907` | `results/astropy-12907/eval_report.json` — real `run_evaluation` output |
+| `astropy-14182` | transcribed |
+| `astropy-14365` | transcribed |
+| `astropy-14995` | transcribed |
+| `astropy-6938` | transcribed |
+
+**How to tell the two apart in future**: a genuine `run_evaluation` report carries `schema_version`, `failure_reasons`, `ambiguous_failure_instances` and `unstopped_instances`. [exp1's report](../exp1/results/summary_report_5instances.json) has all four; this one has none of them, because it was hand-assembled to the same shape.
+
+**This is recoverable, not lost.** `results/predictions_all5.json` holds all five patches intact, so re-running the evaluation regenerates the real verdicts for about one VM-hour:
+
+```bash
+python3 -m swebench.harness.run_evaluation --predictions_path predictions_all5.json \
+  --dataset_name SWE-bench/SWE-bench_Lite --split test \
+  --instance_ids astropy__astropy-{12907,14182,14365,14995,6938} --max_workers 4 --run_id exp2_reverify
+```
+
+Until that runs, the 3/5 headline rests on transcription for 4 of 5 instances, and every claim downstream of it inherits that — which is why the Findings bullet comparing this run to exp1 records the numbers without drawing a conclusion from them. Same root cause as the lost trajectories in [LOG.md](./LOG.md)'s Issues: artifacts were not pulled before the instance was destroyed.
+
 ## Token cost breakdown
 
 | Instance | Gru calls | Minions | Gru tokens | Minion tokens | Total tokens | vs. exp1 (same instance, solo) |
