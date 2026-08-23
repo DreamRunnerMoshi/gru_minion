@@ -112,8 +112,12 @@ def score_run(result_dir: Path, gold_patch: str) -> dict[str, Any]:
     summary = json.loads((result_dir / "cost_summary.json").read_text())
     delegations, cumulative, first_hit = [], "", None
     for rec in summary.get("minions", []):
-        path = rec.get("output_path")
-        text = Path(path).read_text() if path and Path(path).exists() else ""
+        # Recorded path is relative to the run's CWD; fall back to the conventional
+        # layout so a results tree pulled onto another machine still scores.
+        recorded = rec.get("output_path")
+        candidates = [Path(recorded)] if recorded else []
+        candidates.append(result_dir / "delegations" / f"{rec['delegation_id']}.txt")
+        text = next((c.read_text() for c in candidates if c.exists()), "")
         s = score_text(text, gold)
         cumulative += "\n" + text
         if first_hit is None and s["source_files_named"] > 0:

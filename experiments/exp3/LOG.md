@@ -8,7 +8,7 @@
 
 - **Model**: `ollama_chat/qwen3.8:27b` for **both** Gru and minion — deliberate. Holding the model fixed makes this directly comparable to exp1 (solo) and exp2 (Gru/minion, old design) on the identical instances. Frontier-Gru is deferred; the runner still uses one `--model` for both roles and cannot split them.
 - **Dataset**: `SWE-bench/SWE-bench_Lite`, split=`test`, same 5 instances as exp0/exp1/exp2: `astropy__astropy-{12907,14182,14365,14995,6938}`.
-- **Arms**: **B** (`gru.yaml`, no taxonomy — the change under test) and, if run, **A** (`gru-taxonomy.yaml`, exp2's policy on the fixed harness). A exists to separate the harness fixes from the policy change; see that file's header.
+- **Arms**: **B only, first** (`gru.yaml`, no taxonomy — the change under test). **A** (`gru-taxonomy.yaml`, exp2's policy on the fixed harness) is the taxonomy control and costs a second full batch; run it only if B's result needs the harness-vs-policy separation explained — see [RUNBOOK.md](./RUNBOOK.md) step 3 for the decision table.
 - **Infra**: two vast.ai instances, same pattern as exp1/exp2 (RTX 3090 serving Ollama; harness VM for nested Docker), plus a GPU-less VM for evaluation.
 - **Harness**: `orchestrator/` as of `exp3_*` commits. New since exp2: one action per turn enforced in the parser, `think`, `run_check`, `mode` (`oneshot`/`agentic`), `returns` (`findings`/`verdict`) replacing the `type` taxonomy, per-delegation token cost fed back to Gru, coverage receipts on findings delegations, live cache capture, persisted delegation outputs.
 - **Pinned**: `litellm==1.90.0`; `MSWEA_COST_TRACKING=ignore_errors` (both same reasons as exp1/exp2).
@@ -23,34 +23,25 @@ Stated in advance, and deliberately **gates, not findings** — at n=5 none of t
 
 ## Procedure
 
+Full operational detail, including every known infra gotcha, is in [RUNBOOK.md](./RUNBOOK.md). Condensed:
+
 ```bash
-# GPU instance (ollama/ollama image):
+# GPU instance:
 ollama pull qwen3.8:27b
 
-# harness VM, venv with mini-swe-agent==2.4.6 litellm==1.90.0 swebench datasets pyyaml:
+# harness VM, from the repo root, venv active:
 export OLLAMA_API_BASE=http://<gpu-ip>:<mapped-port>
-export MSWEA_COST_TRACKING=ignore_errors
+nohup scripts/run_arm.sh B ollama_chat/qwen3.8:27b "$OLLAMA_API_BASE" > run_B.log 2>&1 &
 
-# arm B (default config), per instance:
-python3 -m orchestrator.run_exp2_single \
-  --instance astropy__astropy-12907 \
-  --model ollama_chat/qwen3.8:27b \
-  --api-base http://<gpu-ip>:<mapped-port> \
-  --output-dir results/B/astropy-12907
+# locally, once it finishes — the gate must exit 0 before any vastai destroy:
+scripts/pull_artifacts.sh root@<ip> <ssh-port> B
+.venv/bin/python scripts/verify_artifacts.py experiments/exp3/results/B
 
-# arm A (taxonomy control), same instances:
-python3 -m orchestrator.run_exp2_single ... --gru-config gru-taxonomy.yaml --output-dir results/A/...
-
-# PULL ARTIFACTS BEFORE DESTROYING ANYTHING (see success criterion 3)
-
-# evaluation, same as every prior experiment:
-python3 -m swebench.harness.run_evaluation --predictions_path predictions_all5.json \
-  --dataset_name SWE-bench/SWE-bench_Lite --split test \
-  --instance_ids astropy__astropy-{12907,14182,14365,14995,6938} --max_workers 4 --run_id exp3_all5
-
-# localization coverage, post-hoc (gold patch never visible at inference time):
-python3 -c "from orchestrator.coverage import score_run; ..."
+# Docker-capable machine — evaluates exp3, re-verifies exp2, builds the table:
+scripts/evaluate.sh B ollama_chat/qwen3.8:27b
 ```
+
+exp2's `predictions_all5.json` is re-evaluated in the same pass: same five instances, so the image pulls are shared, both verdicts come from one harness version, and it closes [`R3`](../../review.md) (exp2's verdict is transcribed for 4 of 5 instances). **If it disagrees with the transcribed 3/5, that changes exp3's own baseline** — the gate below is defined against it.
 
 ## Results
 

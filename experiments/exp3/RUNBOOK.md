@@ -56,7 +56,14 @@ nohup scripts/run_arm.sh B ollama_chat/qwen3.8:27b "$OLLAMA_API_BASE" > run_B.lo
 ssh -p <port> <host> 'tail -20 coding_agent_benchmark/run_B.log'
 ```
 
-`run_arm.sh` is resumable — an instance with a `cost_summary.json` is skipped, so a crashed batch can be restarted without redoing work. Arm A (`scripts/run_arm.sh A ...`) uses `gru-taxonomy.yaml`; run it only if you want the harness-vs-policy separation described in that file's header.
+`run_arm.sh` is resumable — an instance with a `cost_summary.json` is skipped, so a crashed batch can be restarted without redoing work.
+
+**Run arm B only, first.** B is the change under test and carries the success gate. Arm A (`scripts/run_arm.sh A ...`, `gru-taxonomy.yaml`) is the taxonomy control and costs a second full batch — decide whether to run it *after* seeing B, based on what B's result needs explained:
+
+| B's outcome | Is arm A worth it |
+|---|---|
+| Gate met (`14182` resolves) | **Yes, if you want the taxonomy claim.** B vs. exp2 confounds policy with the harness fixes; A separates them. |
+| Gate missed | **No, not yet.** Diagnose B first — A tests a different variable and won't tell you why B failed. |
 
 ## 4. Pull artifacts — before destroying anything
 
@@ -72,28 +79,37 @@ scripts/pull_artifacts.sh root@<ip> <ssh-port> B
 
 > exp2 destroyed both instances before pulling trajectories for 4 of 5 instances. That data is permanently gone. For exp3 the trajectories *are* the measurement, not a debugging aid.
 
-## 5. Evaluate
+## 5. Evaluate + analyze — one command
 
-Needs Docker; run on the harness VM or a fresh GPU-less VM. Use the `SWE-bench/` mirror — `princeton-nlp/SWE-bench_Lite` lacks the `image` field and fails with `KeyError: 'image'`.
+Needs Docker; run on the harness VM or a fresh GPU-less VM.
 
 ```bash
-.venv/bin/python -m orchestrator.analyze_run --results-dir experiments/exp3/results/B   # merges predictions
-
-python3 -m swebench.harness.run_evaluation \
-  --predictions_path experiments/exp3/results/B/predictions_B.json \
-  --dataset_name SWE-bench/SWE-bench_Lite --split test \
-  --instance_ids astropy__astropy-{12907,14182,14365,14995,6938} \
-  --max_workers 4 --run_id exp3_B
+scripts/evaluate.sh B ollama_chat/qwen3.8:27b
 ```
 
-**Save the harness's own report file.** exp2's was lost and reconstructed by hand, and its headline is still unverified for 4 of 5 instances ([R3](../../review.md)). While a VM is up, re-run exp2's intact `predictions_all5.json` too and close that out.
+That does four things in order: merges arm B's per-instance predictions, evaluates them, **re-evaluates exp2's intact `predictions_all5.json`**, and builds the results table. No other commands are needed.
 
-## 6. Analyze
+**Why exp2 is bundled**: it grades the same five astropy instances, so the expensive part — pulling per-instance Docker images — is paid once and serves both. It also means both verdicts come from the same harness version, which matters because exp3's gate *is* a comparison against exp2. And exp2's own verdict is still transcribed for 4 of 5 instances ([R3](../../review.md), [exp2/NOTES.md#verdict-provenance](../exp2/NOTES.md#verdict-provenance)).
+
+**Where the reports land.** swebench names its report `{model_name_or_path with / → __}.{run_id}.json` and writes it to `--report_dir` (default: the current directory). exp2 lost its report by not knowing that. `evaluate.sh` pins the directory, so expect:
+
+```
+experiments/exp3/reports/ollama_chat__qwen3.8:27b.exp3_B.json
+experiments/exp3/reports/ollama_chat__qwen3.8:27b.exp2_reverify.json
+```
+
+Commit both. Per-instance detail also lands under `logs/run_evaluation/<run_id>/`.
+
+Use the `SWE-bench/` mirror — `princeton-nlp/SWE-bench_Lite` lacks the `image` field and fails with `KeyError: 'image'`. `evaluate.sh` already does.
+
+**If `exp2_reverify` disagrees with the transcribed 3/5**: that is a real finding, not a nuisance. Update `exp2/LOG.md`, `review.md` `R3`, and re-check `R15`/`R16` — both lean on "`14182` regressed" as the thing being explained.
+
+## 6. Analyze separately (only if step 5 partially failed)
 
 ```bash
 .venv/bin/python -m orchestrator.analyze_run \
   --results-dir experiments/exp3/results/B \
-  --eval-report <path to run_evaluation report>.json
+  --eval-report experiments/exp3/reports/ollama_chat__qwen3.8:27b.exp3_B.json
 ```
 
 Writes `coverage.json` and `results_table.md`, and prints the table for [LOG.md](./LOG.md). The Resolved column is populated **only** from a real harness report — never fill it by hand.

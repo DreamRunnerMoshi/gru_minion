@@ -10,6 +10,17 @@ import json
 import sys
 from pathlib import Path
 
+
+def _resolve(recorded: str | None, instance_dir: Path, subdir: str, delegation_id: str) -> Path | None:
+    """Recorded paths are relative to whatever CWD the run used. After pulling artifacts
+    to a different machine that may not resolve, so fall back to the conventional layout
+    under the instance directory."""
+    for cand in (Path(recorded) if recorded else None, instance_dir / subdir / f"{delegation_id}.txt",
+                 instance_dir / subdir / f"{delegation_id}.traj.json"):
+        if cand is not None and cand.exists():
+            return cand
+    return None
+
 EXPECTED = {"astropy-12907", "astropy-14182", "astropy-14365", "astropy-14995", "astropy-6938"}
 
 
@@ -34,13 +45,10 @@ def check(root: Path) -> int:
             problems.append(f"{name}: no gru_action_log — think/run_check turns unmeasurable")
         for m in s.get("minions", []):
             did = m["delegation_id"]
-            op = m.get("output_path")
-            if not op or not Path(op).exists():
+            if _resolve(m.get("output_path"), d, "delegations", did) is None:
                 problems.append(f"{name}/{did}: delegation output missing — coverage unscoreable")
-            if m.get("mode") == "agentic":
-                tp = m.get("trajectory_path")
-                if not tp or not Path(tp).exists():
-                    problems.append(f"{name}/{did}: agentic trajectory missing")
+            if m.get("mode") == "agentic" and _resolve(m.get("trajectory_path"), d, "minions", did) is None:
+                problems.append(f"{name}/{did}: agentic trajectory missing")
         patch = json.loads((d / "prediction.json").read_text()) if (d / "prediction.json").exists() else {}
         for v in patch.values():
             if not (v.get("model_patch") or "").strip():

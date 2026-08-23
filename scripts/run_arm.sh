@@ -8,6 +8,11 @@
 # which cost a run in exp2. Poll the log over fresh connections instead.
 set -uo pipefail
 
+# Use the venv explicitly rather than whatever python3 resolves to — nohup'd jobs
+# have bitten this project before by not inheriting an activated environment.
+PYTHON="${PYTHON:-$(command -v python3)}"
+[[ -d orchestrator && -d experiments ]] || { echo "run from the repo root" >&2; exit 2; }
+
 ARM="${1:?usage: run_arm.sh <A|B> <model> <api-base>}"
 MODEL="${2:?}"
 API_BASE="${3:?}"
@@ -33,7 +38,7 @@ for INST in "${INSTANCES[@]}"; do
   fi
   echo "--- ${SHORT}: starting $(date -u +%FT%TZ)"
   # Each instance is independent: one crash must not take the batch with it.
-  python3 -m orchestrator.run_exp2_single \
+  "$PYTHON" -m orchestrator.run_exp2_single \
       --instance "$INST" --model "$MODEL" --api-base "$API_BASE" \
       --gru-config "$GRU_CONFIG" --output-dir "$DIR" \
       > "${OUT_ROOT}/${SHORT}.console.log" 2>&1
