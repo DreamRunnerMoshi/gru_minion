@@ -28,6 +28,7 @@ from minisweagent.environments.docker import DockerEnvironment
 from minisweagent.exceptions import Submitted
 from minisweagent.models.litellm_model import LitellmModel
 
+from orchestrator.cache_stats import extract_cache_stats
 from orchestrator.token_usage import extract_token_usage
 
 _ONESHOT_SYSTEM = (
@@ -150,7 +151,7 @@ class GruEnvironment:
             parts.append(f"--- {path} ---\n{body}")
         return "\n\n".join(parts) if parts else "(none)"
 
-    def _run_oneshot(self, args: dict, material: str) -> tuple[str, dict[str, int], int]:
+    def _run_oneshot(self, args: dict, material: str) -> tuple[str, dict[str, int], int, dict]:
         """A single model call: text in, text out, no shell. Returns (output, usage, n_calls)."""
         model_kwargs = {
             k: v for k, v in self.minion_model_kwargs.get("model_kwargs", {}).items() if k != "parallel_tool_calls"
@@ -172,9 +173,16 @@ class GruEnvironment:
             "completion_tokens": getattr(usage, "completion_tokens", 0) or 0,
             "total_tokens": getattr(usage, "total_tokens", 0) or 0,
         }
-        return text, tokens, 1
+        # A oneshot is a single call with no prior context, so there is nothing a prefix
+        # cache could reuse — recorded explicitly rather than left absent.
+        cache = {"n_calls": 1, "total_prompt_tokens": tokens["prompt_tokens"],
+                 "reported_cached_tokens": None, "reported_cache_hit_pct": None,
+                 "estimated_reused_tokens": 0, "estimated_cache_hit_pct": 0.0}
+        return text, tokens, 1, cache
 
-    def _run_agentic(self, args: dict, material: str, delegation_id: str) -> tuple[str, dict[str, int], int, str, str]:
+    def _run_agentic(
+        self, args: dict, material: str, delegation_id: str
+    ) -> tuple[str, dict[str, int], int, str, str, dict]:
         """A full bash tool loop against the shared testbed."""
         minion_model = LitellmModel(**self.minion_model_kwargs)
         minion_output_path = None
@@ -195,6 +203,7 @@ class GruEnvironment:
             minion_agent.n_calls,
             result.get("exit_status", ""),
             str(minion_output_path) if minion_output_path else "",
+            extract_cache_stats(minion_agent.messages),
         )
 
     def _delegate(self, args: dict) -> dict[str, Any]:
@@ -216,12 +225,22 @@ class GruEnvironment:
 
         exit_status, trajectory_path = "", ""
         if mode == "oneshot":
-            submission, tokens, n_calls = self._run_oneshot(args, material)
+            submission, tokens, n_calls, cache = self._run_oneshot(args, material)
             exit_status = "Completed"
         else:
-            submission, tokens, n_calls, exit_status, trajectory_path = self._run_agentic(
+            submission, tokens, n_calls, exit_status, trajectory_path, cache = self._run_agentic(
                 args, material, delegation_id
             )
+
+        # Persist the delegation's actual output. It was previously in-memory only
+        # (self.delegation_outputs), which made post-hoc localization-coverage scoring
+        # impossible — the thing that lets 5 instances yield ~30 observations instead
+        # of 5 bits. See orchestrator/coverage.py.
+        output_path = None
+        if self.output_dir is not None:
+            output_path = self.output_dir / "delegations" / f"{delegation_id}.txt"
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_text(submission or "")
 
         self.minion_records.append(
             {
@@ -234,6 +253,8 @@ class GruEnvironment:
                 **tokens,
                 "exit_status": exit_status,
                 "trajectory_path": trajectory_path or None,
+                "output_path": str(output_path) if output_path else None,
+                "cache": cache,
             }
         )
 

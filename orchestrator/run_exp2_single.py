@@ -30,19 +30,17 @@ from datasets import load_dataset
 # mini-swe-agent's cost calculator otherwise — see experiments/exp1/LOG.md Issues.
 os.environ.setdefault("MSWEA_COST_TRACKING", "ignore_errors")
 
-# NOTE: cache-hit stats (EXPERIMENT_LOG_FORMAT.md asks to capture these live) are
-# deliberately NOT captured here. Decision 2026-08-21: exp2's own question (does the
-# Gru/minion architecture preserve resolve rate vs. exp1's solo minion) doesn't need
-# cache-hit rate — that's a Phase 2 cost-comparison concern. Building live capture
-# (harness VM polling/tailing the GPU instance's Ollama logs mid-session) was judged
-# real extra engineering not justified for this run. If curious, keep the GPU
-# instance alive briefly after the run and spot-check ollama.log manually, same as
-# exp1 did — but that's a manual step, not something this script does.
+# Cache stats ARE captured now (they were deliberately skipped for exp2 as a Phase 2
+# concern). They stopped being optional once mode="oneshot" landed: it removes history
+# resend that prefix caching was already partly absorbing, so a token delta between runs
+# is not readable as a cost delta without knowing how much of the old resend was cached.
+# See orchestrator/cache_stats.py and review.md R12/R16.
 
 from minisweagent.run.benchmarks.swebench import DATASET_MAPPING, get_sb_environment  # noqa: E402
 
 from orchestrator.gru_environment import GruEnvironment  # noqa: E402
 from orchestrator.gru_model import GruModel  # noqa: E402
+from orchestrator.cache_stats import extract_cache_stats, merge_cache_stats  # noqa: E402
 from orchestrator.token_usage import extract_token_usage  # noqa: E402
 from minisweagent.agents.default import DefaultAgent  # noqa: E402
 
@@ -171,7 +169,12 @@ def main() -> None:
             "exit_status": exit_status,
             "final_verification_passed": final_verification_passed,
             "final_verification_output": final_verification_output,
-            "gru": {"api_calls": gru_agent.n_calls, "cost": gru_agent.cost, **gru_tokens},
+            "gru": {
+                "api_calls": gru_agent.n_calls,
+                "cost": gru_agent.cost,
+                **gru_tokens,
+                "cache": extract_cache_stats(gru_agent.messages),
+            },
             "minions": gru_env.minion_records,
             "minions_total": {
                 "count": len(gru_env.minion_records),
@@ -179,6 +182,10 @@ def main() -> None:
                 "cost": sum(m["cost"] for m in gru_env.minion_records),
                 **minions_tokens,
             },
+            "cache_totals": merge_cache_stats(
+                [extract_cache_stats(gru_agent.messages)]
+                + [m["cache"] for m in gru_env.minion_records if m.get("cache")]
+            ),
         }
         (args.output_dir / "cost_summary.json").write_text(json.dumps(cost_summary, indent=2))
 
