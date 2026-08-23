@@ -64,6 +64,7 @@ def main() -> None:
     parser.add_argument("--model", required=True, help="litellm model string, used for BOTH Gru and minion")
     parser.add_argument("--api-base", required=True, help="Ollama/OpenAI-compatible API base URL")
     parser.add_argument("--output-dir", required=True, type=Path)
+    parser.add_argument("--gru-config", default="gru.yaml", help="Config filename under orchestrator/config/ for Gru's prompt (for A/B comparisons against an alternate prompt)")
     args = parser.parse_args()
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
@@ -74,7 +75,8 @@ def main() -> None:
     instance = instances[args.instance]
 
     session_config = load_yaml(CONFIG_DIR / "session.yaml")
-    gru_config = load_yaml(CONFIG_DIR / "gru.yaml")
+    gru_config = load_yaml(CONFIG_DIR / args.gru_config)
+    logger.info(f"Using Gru config: {args.gru_config}")
     minion_config = load_yaml(CONFIG_DIR / "minion.yaml")
 
     logger.info("Starting shared testbed container")
@@ -126,6 +128,17 @@ def main() -> None:
 
         patch = result.get("submission", "")
         exit_status = result.get("exit_status", "")
+        # Fallback: if the session ended any way other than a clean Submitted (e.g.
+        # RepeatedFormatError from Gru writing prose instead of calling finish after
+        # a real pass), the minions' actual work still sits in the shared testbed's
+        # working tree — pull it via git diff directly rather than losing it. Found
+        # the hard way: a run where every delegation succeeded still produced a
+        # 0-char patch because Gru never phrased a valid finish() call.
+        if not patch and exit_status != "Submitted":
+            logger.warning(f"Session ended via {exit_status!r}, not Submitted — falling back to git diff on the shared testbed")
+            fallback_diff = docker_env.execute({"command": "git diff"})
+            patch = fallback_diff.get("output", "")
+            logger.info(f"Fallback git diff recovered {len(patch)} chars")
         # Whether Gru's own self-authored final_verification (necessarily blind to the
         # real hidden FAIL_TO_PASS/PASS_TO_PASS, see prompts/gru-loop.md) agreed with
         # itself at least — the real verdict still only comes from run_evaluation on
