@@ -169,6 +169,9 @@ def main() -> None:
             "exit_status": exit_status,
             "final_verification_passed": final_verification_passed,
             "final_verification_output": final_verification_output,
+            # Every Gru action in order — needed to count think/run_check turns and to see
+            # the delegate-vs-decide choice, which is the thing exp3 is actually measuring.
+            "gru_action_log": gru_env.gru_action_log,
             "gru": {
                 "api_calls": gru_agent.n_calls,
                 "cost": gru_agent.cost,

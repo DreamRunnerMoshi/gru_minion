@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# Run one exp3 arm over all instances. Runs ON the harness VM.
+#
+#   nohup scripts/run_arm.sh B ollama_chat/qwen3.8:27b http://<gpu-ip>:<port> > run_B.log 2>&1 &
+#
+# nohup + a remote-side redirect is deliberate: a dropped SSH connection silently
+# stops a local-side `ssh cmd > file` pipe while the remote process keeps running,
+# which cost a run in exp2. Poll the log over fresh connections instead.
+set -uo pipefail
+
+ARM="${1:?usage: run_arm.sh <A|B> <model> <api-base>}"
+MODEL="${2:?}"
+API_BASE="${3:?}"
+INSTANCES=(astropy__astropy-12907 astropy__astropy-14182 astropy__astropy-14365 astropy__astropy-14995 astropy__astropy-6938)
+
+case "$ARM" in
+  A) GRU_CONFIG=gru-taxonomy.yaml ;;
+  B) GRU_CONFIG=gru.yaml ;;
+  *) echo "arm must be A or B" >&2; exit 2 ;;
+esac
+
+OUT_ROOT="experiments/exp3/results/${ARM}"
+mkdir -p "$OUT_ROOT"
+export MSWEA_COST_TRACKING=ignore_errors
+
+echo "=== exp3 arm ${ARM} | config ${GRU_CONFIG} | model ${MODEL} | $(date -u +%FT%TZ)"
+FAILED=()
+for INST in "${INSTANCES[@]}"; do
+  SHORT="${INST#astropy__}"
+  DIR="${OUT_ROOT}/${SHORT}"
+  if [[ -f "${DIR}/cost_summary.json" ]]; then
+    echo "--- ${SHORT}: already complete, skipping"; continue
+  fi
+  echo "--- ${SHORT}: starting $(date -u +%FT%TZ)"
+  # Each instance is independent: one crash must not take the batch with it.
+  python3 -m orchestrator.run_exp2_single \
+      --instance "$INST" --model "$MODEL" --api-base "$API_BASE" \
+      --gru-config "$GRU_CONFIG" --output-dir "$DIR" \
+      > "${OUT_ROOT}/${SHORT}.console.log" 2>&1
+  RC=$?
+  if [[ $RC -ne 0 ]]; then
+    echo "--- ${SHORT}: EXIT ${RC} (see ${SHORT}.console.log)"; FAILED+=("$SHORT")
+  else
+    echo "--- ${SHORT}: done $(date -u +%FT%TZ)"
+  fi
+done
+
+echo "=== arm ${ARM} finished $(date -u +%FT%TZ)"
+[[ ${#FAILED[@]} -gt 0 ]] && echo "FAILED: ${FAILED[*]}"
+echo "Next: scripts/verify_artifacts.py ${OUT_ROOT}  — BEFORE destroying anything."
