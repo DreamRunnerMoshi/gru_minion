@@ -1,6 +1,5 @@
-"""A factual, non-prescriptive sentence about what Gru and the minion actually cost
-per token this session — injected into the prompt as `{{ cost_context }}` (see
-orchestrator/prompts/gru/role.md).
+"""A factual, non-prescriptive sentence about Gru/minion cost and vendor — injected
+into the prompt as `{{ cost_context }}` (see orchestrator/prompts/gru/role.md).
 
 Added 2026-08-24: the prompt previously said only "cheaper," with no magnitude, and a
 sentence explicitly pre-authorizing zero delegation as "a legitimate outcome, not a
@@ -8,13 +7,20 @@ mistake to correct." First real live run (DeepSeek V4 Pro/Flash over OpenRouter)
 delegated zero times across 80 turns — consistent with self-hosted Qwen's behavior in
 exp3, but it left the project's cost hypothesis untestable (no delegation, nothing to
 compare). Decision: still no rule telling Gru to delegate, but replace the vague claim
-with the real number so Gru reasons from an actual fact instead of nothing. This is a
-fact injection, not a nudge — see the module docstring on ToolPolicy in gru_toolcall.py
-for the same distinction applied to actions/fields instead of prompt content.
+with a real fact so Gru reasons from something instead of nothing. This is a fact
+injection, not a nudge — see the module docstring on ToolPolicy in gru_toolcall.py for
+the same distinction applied to actions/fields instead of prompt content.
 
-Real cost data only. When it isn't available (self-hosted models — Phase 1's
+Revised 2026-08-24, second pass: rounded the cost ratio to a legible bucket ("roughly
+20x to 30x cheaper") instead of reporting exact per-token prices — the point is
+communicating order of magnitude, not giving Gru numbers to compute with. Also
+extended the same-vendor fact (added same day) with why it's relevant: money spent on
+the minion isn't leaving the vendor that made Gru, so there's no reason to weigh
+delegation against some notion of conserving spend for one's own maker.
+
+Real data only. When nothing real is known (self-hosted models — Phase 1's
 ollama_chat/... runs never had per-role cost, by design; see memory
-project-machine-config), the sentence is omitted entirely rather than fabricated.
+project-machine-config), the relevant sentence is omitted, not fabricated.
 """
 
 import httpx
@@ -71,11 +77,22 @@ def _vendor(model: str) -> str | None:
     return None
 
 
+def _round_ratio(x: float) -> int:
+    """A cost ratio rounded to a legible bucket — the point is conveying order of
+    magnitude ("about 20-30x"), not giving Gru a number precise enough to look
+    computed. Bucket width scales with size so a 3x ratio doesn't round to 5x."""
+    if x < 10:
+        return max(1, round(x))
+    if x < 100:
+        return round(x / 5) * 5
+    return round(x / 10) * 10
+
+
 def describe_cost_ratio(gru_model: str, minion_model: str) -> str:
     """Returns a sentence fragment (leading space included, empty string if there's
     nothing real to say) — designed to be spliced directly after "a companion LLM,
     cheaper to run than you." in role.md. Two independent facts, each stated only when
-    actually known/true: relative cost, and same model family."""
+    actually known/true: relative cost (rounded), and same-vendor economics."""
     parts = []
 
     gru_price = _price_per_million(gru_model)
@@ -83,14 +100,16 @@ def describe_cost_ratio(gru_model: str, minion_model: str) -> str:
     if gru_price and minion_price and minion_price[0] > 0 and minion_price[1] > 0:
         gru_in, gru_out = gru_price
         min_in, min_out = minion_price
-        parts.append(
-            f"Concretely, this session: you cost ${gru_in:.2f} / ${gru_out:.2f} per million "
-            f"input/output tokens; the minion costs ${min_in:.3f} / ${min_out:.3f} — "
-            f"about {gru_in / min_in:.0f}x / {gru_out / min_out:.0f}x cheaper per token."
-        )
+        lo = _round_ratio(min(gru_in / min_in, gru_out / min_out))
+        hi = _round_ratio(max(gru_in / min_in, gru_out / min_out))
+        ratio_text = f"{lo}x" if lo == hi else f"{lo}x to {hi}x"
+        parts.append(f"The minion costs roughly {ratio_text} less per token than you do this session.")
 
     gru_vendor, minion_vendor = _vendor(gru_model), _vendor(minion_model)
     if gru_vendor and gru_vendor == minion_vendor:
-        parts.append(f"Same model family as you ({gru_vendor}), just the cost-efficient tier.")
+        parts.append(
+            f"Same model family as you ({gru_vendor}) — spending on the minion stays with "
+            f"your own vendor, not a competitor's."
+        )
 
     return (" " + " ".join(parts)) if parts else ""
