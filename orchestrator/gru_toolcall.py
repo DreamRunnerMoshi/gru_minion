@@ -213,6 +213,26 @@ def _format_error(format_error_template: str, *, error: str, has_tool_calls: boo
     }
 
 
+def _escalation_prefix(consecutive_format_errors: int) -> str:
+    """exp2-rerun and exp3 (LOG.md) both found the dominant FormatError is Gru writing a
+    prose conclusion instead of calling a tool, and that a static repeated correction does
+    not stop it — `think` was added as a legal way to do this and was used 0/147 times in
+    exp3 arm B. This escalates the correction itself into a harder constraint (naming the
+    consequence, not just repeating the instruction) as consecutive failures pile up,
+    rather than relying on the model to self-correct from the same text every time."""
+    if consecutive_format_errors <= 0:
+        return ""
+    if consecutive_format_errors == 1:
+        return "This is the 2nd response in a row with no valid tool call. "
+    return (
+        f"This is response #{consecutive_format_errors + 1} in a row with no valid tool call. "
+        "Continuing this loses ALL work done so far — the session terminates with an EMPTY "
+        "submission, no partial credit. Do not write any explanation, summary, or analysis text. "
+        "Your entire response must be nothing but exactly one tool call. If you believe the task "
+        "is already done, call finish now instead of describing why it's done. "
+    )
+
+
 def _validate_delegate(args: dict) -> str:
     missing = [k for k in _DELEGATE_REQUIRED if k not in args]
     if missing:
@@ -260,20 +280,33 @@ def _validate_finish(args: dict) -> str:
     return ""
 
 
-def parse_gru_actions(tool_calls: list, *, format_error_template: str, template_kwargs: dict | None = None) -> list[dict]:
+def parse_gru_actions(
+    tool_calls: list,
+    *,
+    format_error_template: str,
+    template_kwargs: dict | None = None,
+    consecutive_format_errors: int = 0,
+) -> list[dict]:
     """Parse Gru's tool calls into action dicts. Raises FormatError on malformed/unknown calls.
 
     Exactly one action per turn is enforced here rather than relying on the provider honouring
     `parallel_tool_calls: false` — Ollama silently dropped that param in exp2 and Gru issued
     delegations in pairs, so 4 of 6 were decided without seeing the previous result.
+
+    consecutive_format_errors: how many FormatErrors have already fired in a row before this
+    call (0 on a fresh turn) — the caller (GruModel) owns this count and resets it to 0 on any
+    clean parse. Used to escalate the correction text (_escalation_prefix) instead of repeating
+    the same message every time; see that function's docstring for why.
     """
     template_kwargs = template_kwargs or {}
+    escalation = _escalation_prefix(consecutive_format_errors)
     if not tool_calls:
         raise FormatError(
             _format_error(
                 format_error_template,
                 error=(
-                    "No tool calls found in the response. Every response MUST include exactly one tool call "
+                    escalation
+                    + "No tool calls found in the response. Every response MUST include exactly one tool call "
                     f"({', '.join(sorted(_TOOL_NAMES))}). Use 'think' if the next step is a decision rather than work."
                 ),
                 has_tool_calls=False,
@@ -285,7 +318,8 @@ def parse_gru_actions(tool_calls: list, *, format_error_template: str, template_
             _format_error(
                 format_error_template,
                 error=(
-                    f"{len(tool_calls)} tool calls in one response; exactly one is allowed. Issue the first "
+                    escalation
+                    + f"{len(tool_calls)} tool calls in one response; exactly one is allowed. Issue the first "
                     "one alone — you need to see what it returns before deciding the next step, and that "
                     "is the whole point of working one step at a time."
                 ),
@@ -325,7 +359,7 @@ def parse_gru_actions(tool_calls: list, *, format_error_template: str, template_
         raise FormatError(
             _format_error(
                 format_error_template,
-                error=error_msg.strip(),
+                error=escalation + error_msg.strip(),
                 has_tool_calls=True,
                 template_kwargs=template_kwargs,
             )

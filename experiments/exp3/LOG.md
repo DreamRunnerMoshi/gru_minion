@@ -91,9 +91,17 @@ Both primary gates missed: `astropy-14182` did not resolve, and the harness did 
 
 Two things needed fixing before any further batch, in priority order:
 1. **`run_check` needed actual enforcement**, not just a description asking Gru to delegate exploration — this run shows the model won't self-police it, and it's the reason exp3's own hypothesis (what delegation costs once oneshot mode is in place) wasn't really testable from this data: there was almost no delegation to measure. **Done** — see Findings above.
-2. **The `think`/`RepeatedFormatError` prose-instead-of-tool-call pattern** — real, but secondary to (1); fixing `run_check` first may also reduce how often Gru drifts into narration, since it currently has no delegation cadence forcing a decision point. **Not yet addressed** — worth re-checking after (1)'s fix before spending more effort here, since it may partially resolve on its own.
+2. **The `think`/`RepeatedFormatError` prose-instead-of-tool-call pattern** — real, but secondary to (1); fixing `run_check` first may also reduce how often Gru drifts into narration, since it currently has no delegation cadence forcing a decision point. **Addressed 2026-08-23** (still unvalidated against live infra), after the diagnostic re-run below confirmed (1)'s fix works but this pattern is a genuinely separate problem — see next section.
 
 **Next**: a small diagnostic re-run (not necessarily a full 5-instance batch) to confirm (1) actually restores delegation and doesn't just shift `run_check` usage to commands that dodge the heuristic, before committing to a full arm B rerun or arm A.
+
+### `RepeatedFormatError` fix (2026-08-23)
+
+Considered and ruled out API-level enforcement first: `tool_choice: "required"` via `model_kwargs`, which would make a tool call structurally mandatory rather than requested. Checked directly against the installed `litellm==1.90.0` source rather than assuming it works — `litellm/llms/ollama/chat/transformation.py`'s `map_openai_params` lists `tool_choice` in `get_supported_openai_params` but then unconditionally discards it (`non_default_params.pop("tool_choice", None)  # causes ollama requests to hang`) before ever building the Ollama request. Same dead end as `parallel_tool_calls` in exp2, this time confirmed in the library source rather than inferred from behavior: `ollama_chat` never sees `tool_choice` regardless of what's passed. Not worth another live-infra cycle to rediscover this.
+
+Landed a harness-level fix instead, on the diagnosis that a static, repeated correction message doesn't work on this model — `think` was added as a legal way to reason-in-text-via-a-tool-call and was used 0/147 times in arm B, so the problem isn't the absence of an escape hatch. `GruModel` (`orchestrator/gru_model.py`) now tracks its own consecutive-FormatError count across the session (reset on any clean parse) and passes it into `parse_gru_actions` (`orchestrator/gru_toolcall.py`), which escalates the correction text itself as failures pile up: 2nd consecutive failure gets a one-line flag, 3rd+ gets an explicit warning that continuing discards all work with no partial credit, plus a blunter instruction to call `finish` directly instead of narrating that the task is done. Applies to all three `FormatError` sites in `parse_gru_actions` (no tool call, multiple tool calls, malformed/invalid tool call), not just the no-tool-call case that dominated this run.
+
+Not yet re-run against live infra — same status as the `run_check` fix before its diagnostic re-run.
 
 ### Diagnostic re-run (2026-08-23, single instance, `astropy-14182`, fixes in place)
 

@@ -5,12 +5,22 @@ prep) is inherited unmodified from LitellmModel.
 
 import litellm
 
+from minisweagent.exceptions import FormatError
 from minisweagent.models.litellm_model import LitellmModel
 
 from orchestrator.gru_toolcall import GRU_TOOLS, format_gru_observation_messages, parse_gru_actions
 
 
 class GruModel(LitellmModel):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        # Consecutive FormatErrors on this model instance (one per Gru session), so
+        # parse_gru_actions can escalate its correction text instead of repeating the same
+        # message every retry — see gru_toolcall.py's _escalation_prefix. Reset on any clean
+        # parse, incremented on any FormatError, tracked here (not on the mini-swe-agent
+        # DefaultAgent) because this is the only object both sides of that call share.
+        self._consecutive_format_errors = 0
+
     def _query(self, messages: list[dict[str, str]], **kwargs):
         try:
             return litellm.completion(
@@ -25,11 +35,18 @@ class GruModel(LitellmModel):
 
     def _parse_actions(self, response) -> list[dict]:
         tool_calls = response.choices[0].message.tool_calls or []
-        return parse_gru_actions(
-            tool_calls,
-            format_error_template=self.config.format_error_template,
-            template_kwargs={"finish_reason": response.choices[0].finish_reason},
-        )
+        try:
+            actions = parse_gru_actions(
+                tool_calls,
+                format_error_template=self.config.format_error_template,
+                template_kwargs={"finish_reason": response.choices[0].finish_reason},
+                consecutive_format_errors=self._consecutive_format_errors,
+            )
+        except FormatError:
+            self._consecutive_format_errors += 1
+            raise
+        self._consecutive_format_errors = 0
+        return actions
 
     def format_observation_messages(
         self, message: dict, outputs: list[dict], template_vars: dict | None = None
