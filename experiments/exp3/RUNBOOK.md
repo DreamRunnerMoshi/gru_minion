@@ -56,9 +56,9 @@ nohup scripts/run_arm.sh B gru.yaml ollama_chat/qwen3.8:27b "$OLLAMA_API_BASE" >
 ssh -p <port> <host> 'tail -20 coding_agent_benchmark/run_B.log'
 ```
 
-`run_arm.sh` is resumable — an instance with a `cost_summary.json` is skipped, so a crashed batch can be restarted without redoing work. It takes an explicit `<label> <gru-config.yaml>` pair (revised 2026-08-24) rather than a fixed A/B lookup — `B gru.yaml` above is this file's own gate; a different fragment-based variant (e.g. `gru-minimal.yaml`, see [prompts/gru-loop.md](../../prompts/gru-loop.md)) runs the same way with a different label and config name, no script change needed.
+`run_arm.sh` is resumable — an instance with a `cost_summary.json` is skipped, so a crashed batch can be restarted without redoing work. It takes an explicit `<label> <gru-config.yaml>` pair (revised 2026-08-24) rather than a fixed A/B lookup — `B gru.yaml` above is this file's own gate; a different config runs the same way with a different label and filename, no script change needed.
 
-**Arm A / `gru-taxonomy.yaml` (the old type-taxonomy prompt, exp2's policy) was deleted 2026-08-24.** It was deferred per this experiment's own Conclusion (never run — B missed its gates, and A tests a different variable that wouldn't explain why) and superseded by the fragment/`ToolPolicy` ablation approach in [prompts/gru-loop.md](../../prompts/gru-loop.md). The decision table that used to be here is preserved in [LOG.md](./LOG.md) as historical record; it no longer describes a runnable option.
+**Arm A / `gru-taxonomy.yaml` (the old type-taxonomy prompt, exp2's policy) was deleted 2026-08-24.** It was deferred per this experiment's own Conclusion (never run — B missed its gates, and A tests a different variable that wouldn't explain why). The decision table that used to be here is preserved in [LOG.md](./LOG.md) as historical record; it no longer describes a runnable option. Gru's prompt is now a single evolving config (`gru.yaml`) edited incrementally rather than a family of A/B variants — see [prompts/gru-loop.md](../../prompts/gru-loop.md) for the current design and its revision history.
 
 ## 4. Pull artifacts — before destroying anything
 

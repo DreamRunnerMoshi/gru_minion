@@ -8,9 +8,8 @@
 - `tool_policy` (a dict of ToolPolicy fields), normalized into an actual ToolPolicy.
   Absent entirely, it defaults to the original fully-permissive behavior.
 
-Added 2026-08-24 alongside orchestrator/prompt_fragments.py, for bit-by-bit prompt
-experimentation — see orchestrator/config/gru-minimal.yaml for the first variant this
-was built for.
+Added 2026-08-24 alongside orchestrator/prompt_fragments.py, so gru.yaml's prompt could
+be split into a few topic files instead of one long block.
 """
 
 from pathlib import Path

@@ -1,1 +1,0 @@
-- **`finish`** — declare the task complete, with a verification that should confirm it.

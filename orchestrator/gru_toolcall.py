@@ -7,8 +7,9 @@ for the design rationale and prompts/README.md for the revision history.
 Revised 2026-08-24: the action set is no longer fixed at four. `ToolPolicy` +
 `build_tools(policy)` let a session offer any subset (delegate_to_minion and finish
 are always present; think, run_check, returns='verdict', and finish's verification
-requirement are each independently toggleable) — see orchestrator/prompt_fragments.py
-and orchestrator/config/gru-minimal.yaml for the first variant this enables.
+requirement are each independently toggleable) — orchestrator/config/gru.yaml
+currently uses the fully-permissive default (all four, no restrictions); the
+restrictive path exists for whenever a narrower session is wanted again.
 
 Revised 2026-08-22 (see review.md R5/R6/R13/R15 and the delegation-criterion
 discussion behind them):
@@ -206,8 +207,7 @@ _MODES = {"oneshot", "agentic"}
 
 @dataclass(frozen=True)
 class ToolPolicy:
-    """What Gru is offered this session — added 2026-08-24 for bit-by-bit prompt
-    experimentation (see orchestrator/prompt_fragments.py). Defaults reproduce the
+    """What Gru is offered this session — added 2026-08-24. Defaults reproduce the
     original, fully-permissive design unchanged: every existing config that doesn't
     set `tool_policy` behaves exactly as before.
 
@@ -215,9 +215,8 @@ class ToolPolicy:
     a lever on how Gru should use them. That distinction matters: this project's stance
     (2026-08-23) is that Gru's delegation judgement should not be forced by the harness.
     A policy that removes `verdict` or drops `run_check` isn't forcing a *choice* Gru
-    would otherwise make freely; it's defining what session is being run, the same way
-    picking gru.yaml vs. gru-minimal.yaml does. Nothing here nudges Gru's behavior
-    within whatever action set it's given.
+    would otherwise make freely; it's defining what session is being run. Nothing here
+    nudges Gru's behavior within whatever action set it's given.
     """
 
     allow_think: bool = True

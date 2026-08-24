@@ -1,46 +1,14 @@
-# Gru's runtime config — the "full" variant: all four actions, verdict delegations
-# allowed, finish requires verification. Prompt text composed from fragments under
+# Gru's runtime config. Prompt text composed from fragments under
 # orchestrator/prompts/gru/ (orchestrator/gru_config.py resolves
 # system_template_fragments into system_template at load time) rather than a literal
-# block — see prompts/gru-loop.md for the design rationale and revision history.
-#
-# Revised 2026-08-24: converted from a literal system_template to fragment references,
-# and stripped the prescriptive delegation criteria (the "token-heavy and
-# judgement-light" framing, the two-part "before delegating" checklist) and the
-# run_check write-rejection enforcement. Explicit user decision: do not force Gru's
-# delegation behavior, even with a smaller model that may under-delegate — if it
-# chooses not to delegate, that is a finding to observe, not a defect to engineer
-# around. Same day, second step: modularized into fragments specifically so a leaner
-# variant (orchestrator/config/gru-minimal.yaml — no verification, no failure
-# handling, just delegate_to_minion and a bare finish) could be built by choosing a
-# different fragment list instead of hand-writing a second long string. See
-# prompts/gru-loop.md for the fuller rationale on both changes.
-#
-# Revised 2026-08-24, fourth change: added task_workflow + boundaries fragments, and
-# switched instance_template to the <pr_description> wrapper mini-swe-agent's own
-# stock SWE-bench prompt uses. Rationale (explicit user framing): deployed for real,
-# a user just gives Gru an instruction and expects it followed with the same rigor a
-# solo coding agent would bring — delegation is an internal efficiency mechanism, not
-# something that should mean Gru gets *less* context than a solo deployment would.
-# Not a verbatim copy of the stock prompt, though — that prompt assumes a raw `bash`
-# tool and a shell-echo submission ritual, neither of which Gru has (delegate_to_minion/
-# think/run_check/finish; finish already is the submission mechanism). Adapted the
-# actually-transferable content (boundaries on what not to touch, the recognize-fix-
-# verify workflow shape) instead of pasting instructions Gru can't act on.
+# block. Full design rationale and revision history: prompts/gru-loop.md — this file
+# only carries the current fragment list and settings, not the history behind them.
 agent:
   system_template_fragments:
     - role
-    - task_workflow
-    - boundaries
-    - actions_header
-    - action_delegate
-    - action_think
-    - action_run_check
-    - action_finish
-    - actions_footer
-    - delegation_shape
-    - failure_handling
-    - verification_guidance
+    - task_approach
+    - actions
+    - delegation_and_verification
 
   instance_template: |
     <pr_description>
@@ -61,7 +29,7 @@ agent:
 
 # tool_policy omitted deliberately: defaults (orchestrator/gru_toolcall.py's
 # ToolPolicy) are fully permissive — all four actions, verdict delegations allowed,
-# finish requires verification — matching this file's behavior before ToolPolicy existed.
+# finish requires verification.
 
 model:
   model_kwargs:

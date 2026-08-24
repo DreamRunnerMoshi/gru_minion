@@ -10,8 +10,7 @@
 # Revised 2026-08-24: took an explicit gru-config filename instead of a hardcoded
 # A/B->config lookup table (A was gru-taxonomy.yaml, the old type-taxonomy prompt —
 # deleted; deferred per exp3/LOG.md's Conclusion and never actually run). A new
-# variant (e.g. gru-minimal.yaml, the bit-by-bit ablation from prompts/gru-loop.md)
-# no longer needs a case added here — just pass its filename.
+# variant no longer needs a case added here — just pass its filename.
 set -uo pipefail
 
 # Use the venv explicitly rather than whatever python3 resolves to — nohup'd jobs
