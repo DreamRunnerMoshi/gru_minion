@@ -12,6 +12,10 @@ from tests.harness import run_session
 from tests.mock_llm import Text, Tool, bash, submit
 
 
+def _all_message_text(session) -> str:
+    return "\n".join(str(m.get("content", "")) for m in session.gru_agent.messages)
+
+
 def test_agentic_verdict_delegation_runs_for_real_and_gru_reverifies(tmp_path):
     delegate = Tool(
         "delegate_to_minion",
@@ -41,6 +45,43 @@ def test_agentic_verdict_delegation_runs_for_real_and_gru_reverifies(tmp_path):
     [record] = session.gru_env.minion_records
     assert record["returns"] == "verdict"
     assert record["mode"] == "agentic"
+
+
+def test_verdict_delegation_shows_gru_the_summary_but_not_the_raw_patch(tmp_path):
+    """2026-08-24: verdict delegations used to hide the minion's own submission from Gru
+    entirely (only PASS/FAIL). Now the minion compiles summary.md before submitting
+    (config/minion.yaml's verdict Submission steps) and Gru is shown that summary — but
+    still never the raw patch, so the check result stays the only thing that decides
+    correctness (orchestrator/gru_environment.py's _split_verdict_submission)."""
+    delegate = Tool(
+        "delegate_to_minion",
+        {
+            "description": "Replace 'foo' with 'FIXED' in README.md.",
+            "returns": "verdict",
+            "mode": "agentic",
+            "inputs": {"scope": "README.md only"},
+            "output_contract": "confirm the edit is done",
+            "verification": {"checks": ["grep -q FIXED README.md"]},
+        },
+    )
+    steps = [
+        delegate,
+        bash("python3 -c \"import pathlib; p = pathlib.Path('README.md'); p.write_text(p.read_text().replace('foo', 'FIXED'))\""),
+        submit('echo UNIQUE_SUMMARY_TEXT_99 && echo "===PATCH===" && echo UNIQUE_PATCH_BODY_77'),
+        Tool("finish", {"summary": "fixed", "final_verification": {"checks": ["grep -q FIXED README.md"]}}),
+    ]
+    session = run_session(tmp_path=tmp_path, steps=steps, repo_files={"README.md": "foo\n"})
+
+    assert session.result["exit_status"] == "Submitted"
+
+    # the full submission (summary + marker + patch) is retained for a later inputs.from...
+    assert "UNIQUE_SUMMARY_TEXT_99" in session.gru_env.delegation_outputs["t1"]
+    assert "UNIQUE_PATCH_BODY_77" in session.gru_env.delegation_outputs["t1"]
+
+    # ...but what Gru is actually shown has the summary and not the raw patch body.
+    transcript = _all_message_text(session)
+    assert "UNIQUE_SUMMARY_TEXT_99" in transcript
+    assert "UNIQUE_PATCH_BODY_77" not in transcript
 
 
 def test_agentic_delegation_that_fails_its_check_is_routine_not_fatal(tmp_path):

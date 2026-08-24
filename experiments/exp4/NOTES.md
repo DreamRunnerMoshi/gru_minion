@@ -1,14 +1,14 @@
 # Experiment 4 — prompting alone changes when Gru considers delegating (and what it costs)
 
-Note tracking a full day's progression, 2026-08-24: seven live runs, same instance
+Note tracking a full day's progression, 2026-08-24: eight live runs, same instance
 (`astropy__astropy-14182`), same model pair (Gru: `openrouter/deepseek/deepseek-v4-pro-0813`,
 minion: `openrouter/deepseek/deepseek-v4-flash-0731`), same everything except Gru's system
-prompt — evolved once per run, each change targeting what the previous run's trajectory
-showed was actually missing. Full rationale for each change: [prompts/gru-loop.md](../../prompts/gru-loop.md)'s
-2026-08-24 revision notes. Raw data for all seven:
-`results/0N-deepseek-v4*/astropy-14182/gru.traj.json` (directories numbered `01`-`07` in the
+prompt (runs 1-7) and, for run 8, the delegation-reporting mechanism itself. Full
+rationale for each prompt change: [prompts/gru-loop.md](../../prompts/gru-loop.md)'s
+2026-08-24 revision notes. Raw data for all eight:
+`results/0N-deepseek-v4*/astropy-14182/gru.traj.json` (directories numbered `01`-`08` in the
 order the runs were actually conducted). Real SWE-bench verdicts (not Gru's self-report)
-for all seven: `reports/*exp4_0N-*.json`.
+for all eight: `reports/*exp4_0N-*.json`.
 
 ## The progression
 
@@ -21,6 +21,45 @@ for all seven: `reports/*exp4_0N-*.json`.
 | 5 | + explicit objective: *"minimize cost as much as possible"* | `Submitted`, verified | 29 | 2 — turns 18, 24 | 0 | ❌ |
 | 6 | `role.md` rewritten (architect/team-of-engineers metaphor) + *"delegate tasks to minion as much as possible"* | `Submitted`, verified | 31 | — | **1** | ❌ |
 | 7 | same architect framing, urgency wording stripped back out (no cost-min objective, no "as much as possible") | `Submitted`, verified | 39 | 0 | 0 | ❌ |
+| 8 | same as 7, plus the verdict-summary mechanism (below): minion always compiles a summary Gru sees, never the raw patch | `Submitted`, verified | 53 | — | **1** | ✅ |
+
+## Run 8: the verification/summary system, and the first success-with-delegation
+
+Separate change from runs 1-7's prompt-wording iteration — this is a mechanism change,
+not a wording change. Two pieces, both implemented and unit-tested
+(`tests/test_delegation_flow.py::test_verdict_delegation_shows_gru_the_summary_but_not_the_raw_patch`)
+before this run:
+
+1. **Gru's prompt** (`delegation_and_verification.md`, new "What comes back" section)
+   now states plainly that the minion always reports back what it did, for either
+   `returns` mode — Gru is never delegating into a black box.
+2. **The minion** (`config/minion.yaml`) now compiles a `summary.md` before submitting a
+   verdict-mode delegation — what changed, why, and explicitly what was *not* addressed —
+   separated from `patch.txt` by a `===PATCH===` marker. `gru_environment.py`'s new
+   `_split_verdict_submission()` shows Gru the summary but never the raw patch; the
+   independently re-run check is still the only thing that decides PASS/FAIL (the
+   "verifiability trap" principle is unchanged — this adds visibility, not a new trust
+   channel).
+
+Run 8 is the first of eight runs where delegation happened *and* real evaluation passed.
+Mechanically, the summary system worked exactly as designed: the minion's
+`delegations/t1.txt` is a clean `summary.md` + `===PATCH===` + `patch.txt`, and its
+"Not addressed / notes" section reads "None" — an honest, checkable claim, since the
+patch does contain both halves of the fix this time.
+
+**Important caveat on causality**: Gru's own delegation *instruction* to the minion
+(`minion_records[0].description`, `gru.traj.json`) already specified the read-path fix
+(`self.data.start_line = len(self.header.header_rows) + 2`) in full, *before* delegating
+— the same diagnosis quality that made runs 1-4 succeed. So this run does not show the
+summary mechanism *catching* an under-scoped check after the fact (the scenario the
+mechanism was built for, per runs 5-7's failure) — it shows a run where Gru's upstream
+diagnosis was already correct, delegated the already-fully-specified execution, and the
+new reporting mechanism worked cleanly on top of that. Whether the new prompt section
+itself contributed to the better diagnosis (e.g., by front-loading "you'll see what
+happened" and reducing the incentive to delegate before finishing the investigation) or
+this is just this run's own sampling variance is not something one data point can
+separate — turns rose to 53 from run 7's 39, which is at least consistent with more
+investigation before delegating, but n=1 is n=1.
 
 Mechanism, not just outcome, for runs 1→4 — each fix targeted a specific thing the
 previous run's own reasoning trace showed was missing, and each one moved the needle on
@@ -48,7 +87,7 @@ exactly that thing:
 - **Run 4 → 5 → 6**: still zero actual delegations through run 4. Landed two
   progressively more direct pushes — an explicit cost-minimization objective (run 5),
   then an explicit "delegate as much as possible" imperative plus an architect/team
-  framing (run 6). Run 6 is the first of seven to actually delegate.
+  framing (run 6). Run 6 is the first of eight to actually delegate.
 - **Run 6 → 7**: stripped the urgency wording back out — kept the architect/team-of-
   engineers role framing, dropped the cost-minimization objective and the "delegate as
   much as possible" imperative. Delegation dropped straight back to zero (as expected,
@@ -67,7 +106,7 @@ first time. The delegation's `verification.checks` were real, independently re-r
 commands (not the minion's self-report) — the "verifiability trap" mechanism worked
 exactly as designed at the mechanical level.
 
-## But: runs 5, 6, and 7 are the only three of seven to fail real evaluation
+## But: runs 5, 6, and 7 were the only three (of eight) to fail real evaluation
 
 Checked directly, not inferred — every patch's diff, `grep`ped for the fix's read-path
 line, cross-checked against the real `swebench.harness` report in `reports/`:
@@ -80,6 +119,7 @@ run 4 (04-deepseek-v4-trust):              has start_line fix: True   — resolv
 run 5 (05-deepseek-v4-forced):             has start_line fix: False  — NOT resolved
 run 6 (06-deepseek-v4-architect):          has start_line fix: False  — NOT resolved
 run 7 (07-deepseek-v4-architect-softened): has start_line fix: False  — NOT resolved
+run 8 (08-deepseek-v4-verified-summary):   has start_line fix: True   — resolved
 ```
 
 The bug fix needs two things: make `RST.write()` handle N header rows (visible directly
@@ -124,26 +164,46 @@ open question is now *which specific piece of the role/framing change (if any), 
 opposed to sampling variance on this one instance, is responsible* — not something this
 data can settle.
 
+**Run 8 weakens the `role.md`-framing theory too.** It reused run 7's exact `role.md`
+(architect/team-of-engineers, no cost-min or "as much as possible" wording) unchanged —
+the only prompt-side difference from run 7 is the "What comes back" paragraph added to
+`delegation_and_verification.md`, plus the mechanism change on the minion side. It
+succeeded, at 53 turns. So neither "architect framing" nor "low turn count" alone
+separates runs 5-7 from the rest anymore — run 8 has the framing runs 5-7 shared and the
+result runs 1-4 had. The most turns-consistent read left standing: whatever made runs
+5-7 rush past the read-path requirement wasn't the role framing by itself, and run 8's
+53 turns (compared to run 7's 39, same framing) is the one variable that moved in the
+direction "more investigation, correct diagnosis" would predict — but, as below, this is
+one run, not a controlled comparison.
+
 ## Caveat
 
 n=1 instance, one model pair, one task shape (a small, self-contained bug fix requiring
-non-obvious two-part reasoning). Seven data points, one continuous progression under
-changing conditions — not seven independent trials, and not a general claim about what
-makes models delegate or hurry. The turn-count correlation that looked clean at n=6
-(runs 1-6) does not extend cleanly to run 7 — see above — so neither "hurrying costs
-thoroughness" nor any alternative explanation is settled by this data; both need a
-repeated run under identical prompts, or a different task instance, before either can be
-trusted.
+non-obvious two-part reasoning). Eight data points, one continuous progression under
+changing conditions — not eight independent trials, and not a general claim about what
+makes models delegate, hurry, or diagnose correctly. The turn-count correlation that
+looked clean at n=6 (runs 1-6) did not extend cleanly to run 7, and the `role.md`-framing
+theory that looked plausible after run 7 did not survive run 8 either. Every theory
+proposed so far has been broken by the very next run. That pattern is itself the honest
+takeaway: at n=1-per-condition on one instance, this project cannot yet distinguish a
+real causal mechanism from this instance's own run-to-run variance. Nothing here should
+be read as "the verification/summary system fixed the problem" — run 8 is one success,
+immediately following three failures, on a task that four earlier runs (1-4) also solved
+without any of this machinery.
 
 ## Next
 
-Two candidates, not yet tried:
-1. **Repeat runs 6 and 7's exact prompts on fresh sessions** (or a different instance) to
-   check whether either result — run 6's failure-with-delegation or run 7's
-   failure-without-urgency — is a repeatable property of its prompt, or this run's own
-   sampling variance. Run 7 in particular now needs this before anything is concluded
-   from it.
-2. **A task genuinely too large for one context** — forcing an actual need to split
+1. **Repeat run 8's exact prompt + mechanism on several fresh sessions** (same instance)
+   before concluding anything about the verification/summary system's effect — one
+   success right after three straight failures is exactly the kind of result that needs
+   a repeat before it's trusted over "this instance's variance."
+2. **Repeat runs 6 and 7's exact prompts on fresh sessions** (or a different instance) to
+   check whether either earlier result — run 6's failure-with-delegation or run 7's
+   failure-without-urgency — was a repeatable property of its prompt, or also just
+   variance.
+3. **A task genuinely too large for one context** — forcing an actual need to split
    work, rather than an efficiency judgement call — to see whether delegation happens
-   for a different reason than "the prompt pushed me to," and whether that version
-   preserves investigation depth better than an explicit imperative does.
+   for a different reason than "the prompt pushed me to," on an instance where n=1
+   isn't the whole story.
+4. **A different SWE-bench instance**, so any pattern found isn't entirely a property of
+   this one astropy bug's specific two-part-fix shape.

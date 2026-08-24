@@ -23,6 +23,18 @@ user decision: don't force Gru's delegation behavior at the harness level, even 
 a smaller model that may under-delegate — if it chooses to do work itself rather than
 delegate, that's a finding about this model's behavior, not something to engineer
 around. See prompts/gru-loop.md for the fuller rationale.
+
+Revised 2026-08-24 (again): `returns="verdict"` used to hide the minion's own submission
+from Gru entirely — only the independently re-run checks' pass/fail. Two problems: (1) on
+FAIL, Gru had no idea what the minion had actually attempted, making "decide what to do
+next" a guess; (2) exp4 runs 5-7 all failed real SWE-bench evaluation because a
+delegation's `verification.checks` were too narrow (never tested the read-path half of
+the fix) and Gru never saw what was actually changed, so had no chance to notice the gap
+itself. Now the minion always compiles a short summary of what it did (see
+config/minion.yaml's verdict-mode Submission steps) and that summary — never the raw
+patch — is shown alongside the check's real pass/fail. The check result stays the only
+thing that decides PASS/FAIL; the summary is explicitly labeled as not to be trusted for
+correctness, only for "what happened."
 """
 
 import logging
@@ -38,6 +50,21 @@ from minisweagent.models.litellm_model import LitellmModel
 
 from orchestrator.cache_stats import extract_cache_stats
 from orchestrator.token_usage import extract_token_usage
+
+_VERDICT_SUMMARY_MARKER = "===PATCH==="
+
+
+def _split_verdict_submission(submission: str) -> tuple[str, str]:
+    """A verdict-mode minion submits summary.md then patch.txt, separated by
+    _VERDICT_SUMMARY_MARKER (see config/minion.yaml's Submission steps). Split them —
+    Gru gets the summary, never the raw patch; the check result is still what decides
+    pass/fail. No marker (e.g. a oneshot verdict, or a minion that didn't follow the
+    ritual) degrades to treating the whole submission as the summary."""
+    if _VERDICT_SUMMARY_MARKER in submission:
+        summary, _, patch = submission.partition(_VERDICT_SUMMARY_MARKER)
+        return summary.strip(), patch.strip()
+    return submission.strip(), ""
+
 
 _ONESHOT_SYSTEM = (
     "You are a minion — the execution role in a two-tier coding-agent system. You were handed exactly "
@@ -290,13 +317,17 @@ class GruEnvironment:
 
         if returns == "verdict":
             passed, check_output = self._run_checks(args["verification"]["checks"])
-            self.delegation_outputs[delegation_id] = submission  # kept for a later inputs.from, not shown to Gru
+            self.delegation_outputs[delegation_id] = submission  # kept for a later inputs.from (summary + patch)
+            summary, _ = _split_verdict_submission(submission)
             status = "PASS" if passed else "FAIL"
             observation = (
                 f"Delegation {delegation_id}: {status}\n{cost_line}\n\n"
+                f"What the minion did:\n{summary}\n\n"
                 f"{check_output}\n\n"
-                "(This is the check result, not the content — you asked for a verdict, so the work itself "
-                "isn't shown to you. Re-deriving what the check already settled is wasted effort.)"
+                "(The PASS/FAIL above comes from independently re-running your verification checks, not "
+                "the minion's own claim — trust that, not the summary, for whether it actually worked. The "
+                "summary is so you're never delegating into a black box: use it to decide what to do next, "
+                "especially on FAIL, or to judge whether your checks were even the right ones to write.)"
             )
             return {"output": observation, "returncode": 0 if passed else 1, "exception_info": ""}
 

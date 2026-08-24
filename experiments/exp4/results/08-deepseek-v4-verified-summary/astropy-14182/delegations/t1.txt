@@ -1,0 +1,38 @@
+# Summary
+
+## What changed
+Modified `/testbed/astropy/io/ascii/rst.py` (class `RST` only):
+
+- `__init__` now accepts `header_rows=None` and passes it through to `FixedWidth.__init__` via `super().__init__(delimiter_pad=None, bookend=False, header_rows=header_rows)`. After that, `self.data.start_line` is set to `len(self.header.header_rows) + 2`, so multi-row RST headers read correctly (still 3 for the default single header row).
+- `write` now uses the separator/position line after all header rows as the top/bottom border: with `n = len(self.header.header_rows)` it returns `[lines[n]] + lines + [lines[n]]`. For the default single-row header (n == 1) this is identical to the previous `lines[1]` behavior.
+
+## Why
+To support `header_rows` in the RST writer consistently with `FixedWidth` (e.g. writing name + unit header lines), while keeping default behavior unchanged.
+
+## Verified
+- The provided inline check (write with/without `header_rows`, round-trip read with `header_rows`) passes.
+- `astropy/io/ascii/tests/test_rst.py` (9 tests) passes.
+
+## Not addressed / notes
+- None. No files outside `astropy/io/ascii/rst.py` were modified; no tests, docs, or build/config files touched.
+===PATCH===
+diff --git a/astropy/io/ascii/rst.py b/astropy/io/ascii/rst.py
+index abdeba8ef..8a8c45f79 100755
+--- a/astropy/io/ascii/rst.py
++++ b/astropy/io/ascii/rst.py
+@@ -57,10 +57,11 @@ class RST(FixedWidth):
+     data_class = SimpleRSTData
+     header_class = SimpleRSTHeader
+ 
+-    def __init__(self):
+-        super().__init__(delimiter_pad=None, bookend=False)
++    def __init__(self, header_rows=None):
++        super().__init__(delimiter_pad=None, bookend=False, header_rows=header_rows)
++        self.data.start_line = len(self.header.header_rows) + 2
+ 
+     def write(self, lines):
+         lines = super().write(lines)
+-        lines = [lines[1]] + lines + [lines[1]]
+-        return lines
++        n = len(self.header.header_rows)
++        return [lines[n]] + lines + [lines[n]]
