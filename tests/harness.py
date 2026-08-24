@@ -24,6 +24,7 @@ import yaml
 from minisweagent.agents.default import DefaultAgent
 from minisweagent.environments.local import LocalEnvironment
 
+from orchestrator.cost_context import describe_cost_ratio
 from orchestrator.gru_config import load_gru_config
 from orchestrator.gru_environment import GruEnvironment
 from orchestrator.gru_model import GruModel
@@ -128,6 +129,9 @@ def run_session(
                 task_description=task_description,
                 repo_name="mock-repo",
                 repo_path_or_access_instructions=str(repo),
+                # role.md's {{ cost_context }} needs a value (StrictUndefined) — "mock/gru"
+                # and "mock/minion" have no real pricing, so this always resolves to "".
+                cost_context=describe_cost_ratio("mock/gru", "mock/minion"),
             )
         except Exception as e:
             # Same crash-safety fallback run_gru_session.py uses, so a scripted test can
