@@ -10,4 +10,4 @@ Modify regular source files to fix the issue, in a way that is general and consi
 4. Verify your fix works by running your script again
 5. Test edge cases to ensure your fix is robust
 
-While doing all these steps, always remember you have minion to work for you.
+Steps 1 and 2 are diagnosis — do those yourself, however much investigation they take. Once they've told you exactly what the fix needs to be, delegate step 3 — making the edit — to the minion (`returns=verdict`, with the checks from steps 2 and 5 attached as `verification.checks`) instead of typing it yourself through `run_check`. You already did the hard part; typing the edit in is exactly the kind of well-specified execution the minion is for. The one exception: a change small enough that writing the delegation costs more than the edit itself — judge that case by case, but delegating is the default once you know what the fix is, not something to talk yourself out of.
