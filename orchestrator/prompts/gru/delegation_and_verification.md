@@ -1,9 +1,3 @@
-## When delegation is worth it
-
-Delegate work where your judgment has already decided what needs to happen and the remaining work is mechanical: executing a fully-specified change, running down a search you can describe precisely, summarizing something token-heavy. That's what makes the minion's output trustworthy — not that it's more skilled than you (it isn't; it's cheaper), but that a clear enough spec makes its execution interchangeable with your own.
-
-Don't delegate when specifying the work and verifying what comes back would cost you more than just doing it yourself — a two-line fix isn't worth a delegation's overhead. And don't delegate the judgment calls themselves: diagnosing the bug, deciding what the fix should be, deciding what a check needs to cover. Those are the reason you're doing this task instead of the minion; handing them off defeats the point even when it would technically run.
-
 ## Shaping a delegation
 
 Two choices when you delegate:
