@@ -50,20 +50,15 @@ Always under `nohup`, redirecting **on the remote side**. A dropped SSH connecti
 
 ```bash
 export OLLAMA_API_BASE=http://<gpu-ip>:<mapped-port>
-nohup scripts/run_arm.sh B ollama_chat/qwen3.8:27b "$OLLAMA_API_BASE" > run_B.log 2>&1 &
+nohup scripts/run_arm.sh B gru.yaml ollama_chat/qwen3.8:27b "$OLLAMA_API_BASE" > run_B.log 2>&1 &
 
 # poll over fresh connections:
 ssh -p <port> <host> 'tail -20 coding_agent_benchmark/run_B.log'
 ```
 
-`run_arm.sh` is resumable — an instance with a `cost_summary.json` is skipped, so a crashed batch can be restarted without redoing work.
+`run_arm.sh` is resumable — an instance with a `cost_summary.json` is skipped, so a crashed batch can be restarted without redoing work. It takes an explicit `<label> <gru-config.yaml>` pair (revised 2026-08-24) rather than a fixed A/B lookup — `B gru.yaml` above is this file's own gate; a different fragment-based variant (e.g. `gru-minimal.yaml`, see [prompts/gru-loop.md](../../prompts/gru-loop.md)) runs the same way with a different label and config name, no script change needed.
 
-**Run arm B only, first.** B is the change under test and carries the success gate. Arm A (`scripts/run_arm.sh A ...`, `gru-taxonomy.yaml`) is the taxonomy control and costs a second full batch — decide whether to run it *after* seeing B, based on what B's result needs explained:
-
-| B's outcome | Is arm A worth it |
-|---|---|
-| Gate met (`14182` resolves) | **Yes, if you want the taxonomy claim.** B vs. exp2 confounds policy with the harness fixes; A separates them. |
-| Gate missed | **No, not yet.** Diagnose B first — A tests a different variable and won't tell you why B failed. |
+**Arm A / `gru-taxonomy.yaml` (the old type-taxonomy prompt, exp2's policy) was deleted 2026-08-24.** It was deferred per this experiment's own Conclusion (never run — B missed its gates, and A tests a different variable that wouldn't explain why) and superseded by the fragment/`ToolPolicy` ablation approach in [prompts/gru-loop.md](../../prompts/gru-loop.md). The decision table that used to be here is preserved in [LOG.md](./LOG.md) as historical record; it no longer describes a runnable option.
 
 ## 4. Pull artifacts — before destroying anything
 
@@ -138,6 +133,6 @@ Writes `coverage.json` and `results_table.md`, and prints the table for [LOG.md]
 | `docker.io/vastai/kvm:latest` — `manifest unknown` | no `latest` tag exists anymore; use a dated tag, e.g. `ubuntu_cli_22.04-2025-11-21` | exp3 |
 | `ollama/ollama` image doesn't auto-`serve` under `--ssh` launch | vast.ai's ssh wrapper replaces the entrypoint; `nohup ollama serve &` manually after boot | exp3 |
 | `pull_artifacts.sh` silently pulls from `~/` instead of the repo | non-interactive `ssh host 'cmd'` starts in `$HOME`, not the repo — script now `cd`s explicitly | exp3 |
-| `KeyError: 'cost'` crashes every instance at the bookkeeping step | `minion_records` (exp3's rewritten schema) never has `"cost"`; field dropped from `run_exp2_single.py` | exp3 |
-| Uncaught exception (e.g. Ollama's `"no user query found in messages"`) loses the whole session | `run_exp2_single.py` had no `except` around `gru_agent.run()`; now falls back to git-diff like the `RepeatedFormatError` path | exp3 |
+| `KeyError: 'cost'` crashes every instance at the bookkeeping step | `minion_records` (exp3's rewritten schema) never has `"cost"`; field dropped from `run_gru_session.py` | exp3 |
+| Uncaught exception (e.g. Ollama's `"no user query found in messages"`) loses the whole session | `run_gru_session.py` had no `except` around `gru_agent.run()`; now falls back to git-diff like the `RepeatedFormatError` path | exp3 |
 | `python -m orchestrator.analyze_run` runs, prints nothing, writes nothing, exits 0 | missing `if __name__ == "__main__": main()` guard | exp3 |

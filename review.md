@@ -325,7 +325,7 @@ Both are requests for a reasoning turn. `prompts/gru-loop.md` told Gru it could 
 - exp1 reported both tokens and money (~$0.17 rental, **$0.097/M blended**). exp2's summary line omits the $ figure [`EXPERIMENT_LOG_FORMAT.md`](EXPERIMENT_LOG_FORMAT.md) asks for (`<cost total, $ or GPU-hr>`).
 - [`experiments/exp1/NOTES.md`](experiments/exp1/NOTES.md) established that **~96% prefix-cache reuse** makes raw token counts a poor proxy for self-hosted cost.
 - exp2's architecture is structurally far worse for cache reuse: **30 separate conversation prefixes** (1 Gru session + 29 fresh minion sub-sessions) versus 1 in exp1. Each minion starts a new prompt sharing no prefix with the last.
-- [`orchestrator/run_exp2_single.py`](orchestrator/run_exp2_single.py) documents the deliberate decision to skip live cache capture — defensible for Phase 1's question.
+- [`orchestrator/run_gru_session.py`](orchestrator/run_gru_session.py) documents the deliberate decision to skip live cache capture — defensible for Phase 1's question.
 
 **Cache caveat on `R16`'s `mode` savings** (added 2026-08-22): [`experiments/exp1/NOTES.md`](experiments/exp1/NOTES.md) argued the resend-everything pattern is *"a much smaller cost problem for a self-hosted minion than an API-billed one"* because ~96% prefix-cache reuse puts real GPU cost far below the raw token count. That reasoning holds **within one conversation** — each turn's prompt strictly extends the previous one, so the cache absorbs the resend. Two things change it under this architecture, in opposite directions:
 

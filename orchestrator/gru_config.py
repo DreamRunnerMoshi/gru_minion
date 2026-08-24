@@ -3,8 +3,8 @@
 
 - `agent.system_template_fragments` (a list of names under orchestrator/prompts/gru/),
   composed into the actual `system_template` string via orchestrator.prompt_fragments.
-  A config may still use a literal `agent.system_template` block instead (e.g.
-  gru-taxonomy.yaml, not yet converted) — that path is untouched.
+  A config may still use a literal `agent.system_template` block instead — that path
+  is left untouched, for any config not yet converted to fragments.
 - `tool_policy` (a dict of ToolPolicy fields), normalized into an actual ToolPolicy.
   Absent entirely, it defaults to the original fully-permissive behavior.
 

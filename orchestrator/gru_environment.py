@@ -66,7 +66,7 @@ class GruEnvironment:
         self.minion_instance_template = minion_instance_template
         self.output_dir = output_dir
         self.logger = logger or logging.getLogger("gru.environment")
-        # Set by run_exp2_single.py right after the DefaultAgent(gru_model, self, ...) that
+        # Set by run_gru_session.py right after the DefaultAgent(gru_model, self, ...) that
         # owns this environment is constructed — can't be passed in __init__ since Gru's
         # agent doesn't exist yet at that point. Used only to surface each turn's own token
         # cost (see _turn_cost_line); a not-yet-wired or empty agent degrades to no cost line.

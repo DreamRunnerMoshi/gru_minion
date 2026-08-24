@@ -93,7 +93,7 @@ Fragments live under `orchestrator/prompts/gru/`, one small piece of prompt text
 | `failure_handling.md` | The "On failure" section. |
 | `verification_guidance.md` | The "Authoring final_verification" section. |
 
-A config picks a list (`agent.system_template_fragments`) and, if it wants anything other than the fully-permissive default, a `tool_policy` block (`allow_think`, `allow_run_check`, `allow_verdict`, `require_finish_verification` — see the second 2026-08-24 revision note above for why the policy exists separately from the fragment choice). `orchestrator/gru_config.load_gru_config(filename)` resolves both; `run_exp2_single.py` and `tests/harness.py` both call it instead of a plain `yaml.safe_load`.
+A config picks a list (`agent.system_template_fragments`) and, if it wants anything other than the fully-permissive default, a `tool_policy` block (`allow_think`, `allow_run_check`, `allow_verdict`, `require_finish_verification` — see the second 2026-08-24 revision note above for why the policy exists separately from the fragment choice). `orchestrator/gru_config.load_gru_config(filename)` resolves both; `run_gru_session.py` and `tests/harness.py` both call it instead of a plain `yaml.safe_load`.
 
 **Variants so far:**
 
@@ -102,7 +102,7 @@ A config picks a list (`agent.system_template_fragments`) and, if it wants anyth
 
 **Adding the next step** (add verification back, then failure handling, then think/run_check) is additive: point a new config at `gru-minimal.yaml`'s fragment list plus the piece being reintroduced (e.g. `+ verification_guidance`, `require_finish_verification: true`), rather than writing a new prompt from scratch or editing `gru-minimal.yaml` in place.
 
-`gru-taxonomy.yaml` (the arm A taxonomy control, predates this system) still uses a literal `agent.system_template` block — `load_gru_config` leaves that path untouched, so it keeps working unconverted.
+`load_gru_config` still falls back to a literal `agent.system_template` block for any config not converted to fragments — nothing currently uses that path (`gru-taxonomy.yaml`, the old arm A taxonomy control, was deleted 2026-08-24: deferred per exp3/LOG.md's Conclusion and never actually run), but the fallback stays so a future config doesn't have to be fragment-based to work.
 
 ## User/task template
 

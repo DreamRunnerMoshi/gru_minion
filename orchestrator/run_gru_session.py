@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """Run the Gru/minion architecture on a single SWE-bench instance.
 
+Renamed 2026-08-24 from run_exp2_single.py (git history preserved via `git mv`): it was
+written for exp2 (the first experiment to introduce Gru/minion, vs. exp0/exp1's
+solo-minion) but is generic per-instance orchestration — exp3's arm B, its diagnostic
+runs, and any future orchestrator/config/gru-*.yaml variant all reuse it unchanged, so
+the exp2-specific name was a misnomer.
+
 Same model for both roles for this experiment (Phase 1 framework validation,
 see design/infra/04-machine-config.md and memory project-machine-config) — using
 the same model Gru/minion isolates the architecture's effect from model-capability
@@ -8,7 +14,7 @@ differences, directly comparable against exp1's solo-minion baseline on the same
 instances.
 
 Usage:
-    python -m orchestrator.run_exp2_single \\
+    python -m orchestrator.run_gru_session \\
         --instance astropy__astropy-12907 \\
         --model ollama_chat/qwen3.8:27b \\
         --api-base http://<gpu-instance-ip>:<mapped-port> \\
@@ -48,7 +54,7 @@ from minisweagent.agents.default import DefaultAgent  # noqa: E402
 CONFIG_DIR = Path(__file__).parent / "config"
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
-logger = logging.getLogger("run_exp2_single")
+logger = logging.getLogger("run_gru_session")
 
 
 def load_yaml(path: Path) -> dict:

@@ -10,7 +10,7 @@ REPO_ROOT = Path(__file__).parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-# Same as run_exp2_single.py: an unregistered mock model name would otherwise crash
+# Same as run_gru_session.py: an unregistered mock model name would otherwise crash
 # mini-swe-agent's cost calculator.
 os.environ.setdefault("MSWEA_COST_TRACKING", "ignore_errors")
 

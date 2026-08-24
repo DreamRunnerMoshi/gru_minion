@@ -1,6 +1,6 @@
 """Wires up one Gru session against a disposable local git repo instead of a real
 SWE-bench Docker container, and against a ScriptedLLM instead of real Ollama. This is
-the same wiring orchestrator/run_exp2_single.py does (GruModel + GruEnvironment +
+the same wiring orchestrator/run_gru_session.py does (GruModel + GruEnvironment +
 DefaultAgent), minus the SWE-bench dataset load and Docker container — those are the
 two things that cost real time/infra and aren't what's under test when the question is
 "does the harness's own control flow do the right thing."
@@ -130,7 +130,7 @@ def run_session(
                 repo_path_or_access_instructions=str(repo),
             )
         except Exception as e:
-            # Same crash-safety fallback run_exp2_single.py uses, so a scripted test can
+            # Same crash-safety fallback run_gru_session.py uses, so a scripted test can
             # assert on exit_status without needing to catch the harness's own exceptions.
             result = {"submission": "", "exit_status": f"Crashed:{type(e).__name__}:{e}"}
         result.setdefault("_wall_clock", time.time() - start)
