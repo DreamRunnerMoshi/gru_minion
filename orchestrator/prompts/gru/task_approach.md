@@ -10,4 +10,4 @@ Modify regular source files to fix the issue, in a way that is general and consi
 4. Verify your fix works by running your script again
 5. Test edge cases to ensure your fix is robust
 
-IMPORTANT : While doing this steps, always remember you have minion to work for you, your time precious delegate tasks to minion as much as possible.
+While doing all these steps, always remember you have minion to work for you.
