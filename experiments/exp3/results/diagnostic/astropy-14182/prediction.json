@@ -1,0 +1,7 @@
+{
+  "astropy__astropy-14182": {
+    "model_name_or_path": "ollama_chat/qwen3.8:27b",
+    "instance_id": "astropy__astropy-14182",
+    "model_patch": "diff --git a/astropy/io/ascii/rst.py b/astropy/io/ascii/rst.py\nindex abdeba8ef..01b4d432e 100755\n--- a/astropy/io/ascii/rst.py\n+++ b/astropy/io/ascii/rst.py\n@@ -57,10 +57,18 @@ class RST(FixedWidth):\n     data_class = SimpleRSTData\n     header_class = SimpleRSTHeader\n \n-    def __init__(self):\n-        super().__init__(delimiter_pad=None, bookend=False)\n+    def __init__(self, header_rows=None):\n+        super().__init__(delimiter_pad=None, bookend=False, header_rows=header_rows)\n \n     def write(self, lines):\n         lines = super().write(lines)\n-        lines = [lines[1]] + lines + [lines[1]]\n+        position_line = lines[len(self.data.header_rows)]\n+        if len(self.data.header_rows) > 1:\n+            # With multiple header rows, emit the position line as a single\n+            # contiguous line of position characters; the column boundaries\n+            # are then defined by the header rows, which is valid RST\n+            # simple-table syntax.\n+            position_line = position_line.replace(\" \", self.header.position_char)\n+            lines[len(self.data.header_rows)] = position_line\n+        lines = [position_line] + lines + [position_line]\n         return lines\n"
+  }
+}

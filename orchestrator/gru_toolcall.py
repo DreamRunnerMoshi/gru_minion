@@ -148,7 +148,8 @@ RUN_CHECK_TOOL = {
         "description": (
             "Run verification commands yourself against the shared testbed and see the result. Use this "
             "to re-run a check after correcting it, or to confirm a claim before acting on it. This is "
-            "for verifying, not for exploring the repository — delegate exploration."
+            "for verifying, not for exploring the repository — delegate exploration. Commands that modify "
+            "a repository file are rejected, not executed — that is a change; delegate it."
         ),
         "parameters": {
             "type": "object",

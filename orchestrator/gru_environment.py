@@ -18,6 +18,7 @@ Revised 2026-08-22 alongside orchestrator/gru_toolcall.py:
 """
 
 import logging
+import re
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +31,44 @@ from minisweagent.models.litellm_model import LitellmModel
 
 from orchestrator.cache_stats import extract_cache_stats
 from orchestrator.token_usage import extract_token_usage
+
+# exp3 arm B (2026-08-23): every non-empty-patch instance delegated exactly once and did
+# everything else — including file edits — through run_check, because the prompt alone
+# didn't stop it (see prompts/gru-loop.md's 2026-08-23 revision note). This is a nudge
+# back toward delegation for the write patterns actually observed (shell redirection,
+# sed -i, inline Python open(...,'w')), not a sandbox — a determined command could still
+# get through, and read-only exploration via run_check is deliberately left unenforced
+# (see exp3/LOG.md Findings on why that's the harder problem).
+_SCRATCH_PREFIXES = ("/tmp", "/var/tmp")
+_REDIRECT_RE = re.compile(r"(?<!\d)>{1,2}(?!&)\s*([^\s;&|]+)")
+_SED_SEGMENT_RE = re.compile(r"\bsed\b[^;&|\n]*-i\b[^;&|\n]*")
+_PY_WRITE_RE = re.compile(r"""open\([^)]*['"](w|a|wb|ab)['"]|\.write_text\(""")
+_TMP_LITERAL_RE = re.compile(r"""['"](/tmp[^'"]*|/var/tmp[^'"]*)['"]""")
+
+
+def _is_scratch_path(path: str) -> bool:
+    path = path.strip("'\"")
+    return path == "/dev/null" or any(path == p or path.startswith(p + "/") for p in _SCRATCH_PREFIXES)
+
+
+def _looks_like_repo_write(cmd: str) -> str | None:
+    """Best-effort: does this check command write to a file outside /tmp? Returns the
+    reason if so, else None."""
+    for m in _REDIRECT_RE.finditer(cmd):
+        if not _is_scratch_path(m.group(1)):
+            return f"redirects output to {m.group(1)!r}"
+    for m in _SED_SEGMENT_RE.finditer(cmd):
+        # sed's file argument is reliably the segment's last token (its edit expression,
+        # quoted, comes before it) — simpler and more robust than trying to skip over an
+        # arbitrarily-quoted -e/script argument with a second regex.
+        tokens = m.group(0).split()
+        target = tokens[-1] if tokens else None
+        if target and not _is_scratch_path(target):
+            return f"sed -i targets {target!r}"
+    if _PY_WRITE_RE.search(cmd) and not _TMP_LITERAL_RE.search(cmd):
+        return "opens a file in write/append mode"
+    return None
+
 
 _ONESHOT_SYSTEM = (
     "You are a minion — the execution role in a two-tier coding-agent system. You were handed exactly "
@@ -58,6 +97,11 @@ class GruEnvironment:
         self.minion_instance_template = minion_instance_template
         self.output_dir = output_dir
         self.logger = logger or logging.getLogger("gru.environment")
+        # Set by run_exp2_single.py right after the DefaultAgent(gru_model, self, ...) that
+        # owns this environment is constructed — can't be passed in __init__ since Gru's
+        # agent doesn't exist yet at that point. Used only to surface each turn's own token
+        # cost (see _turn_cost_line); a not-yet-wired or empty agent degrades to no cost line.
+        self.gru_agent: DefaultAgent | None = None
 
         self.delegation_outputs: dict[str, str] = {}  # id -> raw content, for inputs.from passthrough
         self.delegation_counter = 0
@@ -102,18 +146,39 @@ class GruEnvironment:
 
     def _run_checks(self, checks: list[str]) -> tuple[bool, str]:
         """Run check commands directly against the shared testbed. Real, independent
-        pass/fail — never trusts a minion's own report."""
+        pass/fail — never trusts a minion's own report. A command that looks like a
+        repository write is rejected rather than executed (_looks_like_repo_write) —
+        applies here too, not just from run_check, so a write can't be smuggled in via
+        a delegation's verification.checks either."""
         if not checks:
             return True, "(no checks specified)"
         outputs = []
         all_passed = True
         for check_cmd in checks:
+            reason = _looks_like_repo_write(check_cmd)
+            if reason is not None:
+                all_passed = False
+                outputs.append(
+                    f"$ {check_cmd}\n(rejected — {reason}: this looks like a repository "
+                    f"change, not a check. Changes are delegated, not run directly.)"
+                )
+                continue
             out = self.docker_env.execute({"command": check_cmd})
             ok = out["returncode"] == 0
             all_passed = all_passed and ok
             tail = out["output"][-2000:]
             outputs.append(f"$ {check_cmd}\n(exit {out['returncode']})\n{tail}")
         return all_passed, "\n\n".join(outputs)
+
+    def _turn_cost_line(self) -> str:
+        """Token cost of the Gru turn that just produced this action, so a self-directed
+        run_check/think turn is priced too — not just delegations (gru.yaml: "you will be
+        told what each delegation cost... and also what your own turn just cost")."""
+        if self.gru_agent is None or not self.gru_agent.messages:
+            return ""
+        usage = (self.gru_agent.messages[-1].get("extra", {}).get("response", {}) or {}).get("usage") or {}
+        total = usage.get("total_tokens")
+        return f" [this turn cost: {total:,} tokens]" if total is not None else ""
 
     # -- non-delegating actions --
 
@@ -122,7 +187,7 @@ class GruEnvironment:
         'reason and decide directly' is an action Gru can actually take, and so that the
         choice between deciding and delegating is observable in the trajectory."""
         return {
-            "output": "(noted — nothing was executed and no minion was charged)",
+            "output": f"(noted — nothing was executed and no minion was charged.{self._turn_cost_line()})",
             "returncode": 0,
             "exception_info": "",
         }
@@ -132,7 +197,7 @@ class GruEnvironment:
         passed, check_output = self._run_checks(checks)
         status = "PASS" if passed else "FAIL"
         return {
-            "output": f"Checks: {status}\n\n{check_output}",
+            "output": f"Checks: {status}{self._turn_cost_line()}\n\n{check_output}",
             "returncode": 0 if passed else 1,
             "exception_info": "",
         }

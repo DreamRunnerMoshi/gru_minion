@@ -114,14 +114,27 @@ def main() -> None:
             output_path=args.output_dir / "gru.traj.json",
             **gru_agent_kwargs,
         )
+        # Can only be wired after construction — gru_env._turn_cost_line() needs it to
+        # surface each turn's own token cost, not just delegations' (see gru_environment.py).
+        gru_env.gru_agent = gru_agent
 
         logger.info("Starting Gru session")
         start_time = time.time()
-        result = gru_agent.run(
-            task_description=instance["problem_statement"],
-            repo_name=instance.get("repo", ""),
-            repo_path_or_access_instructions=session_config["environment"]["cwd"],
-        )
+        try:
+            result = gru_agent.run(
+                task_description=instance["problem_statement"],
+                repo_name=instance.get("repo", ""),
+                repo_path_or_access_instructions=session_config["environment"]["cwd"],
+            )
+        except Exception as e:
+            # An uncaught exception (e.g. litellm exhausting retries) must not lose the
+            # session the way a bare crash would: gru_agent.messages/n_calls/cost are
+            # updated incrementally through the loop, so they still reflect real work up
+            # to the crash, and the testbed's working tree still has whatever the last
+            # passing delegation left there. Route through the same not-Submitted fallback
+            # below rather than duplicating it.
+            logger.warning(f"Gru session raised {type(e).__name__}: {e}")
+            result = {"submission": "", "exit_status": f"Crashed:{type(e).__name__}"}
         end_time = time.time()
 
         patch = result.get("submission", "")
@@ -182,7 +195,6 @@ def main() -> None:
             "minions_total": {
                 "count": len(gru_env.minion_records),
                 "api_calls": sum(m["api_calls"] for m in gru_env.minion_records),
-                "cost": sum(m["cost"] for m in gru_env.minion_records),
                 **minions_tokens,
             },
             "cache_totals": merge_cache_stats(

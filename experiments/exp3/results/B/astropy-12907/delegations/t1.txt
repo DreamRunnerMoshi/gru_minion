@@ -1,0 +1,210 @@
+# Separability-semantics dependencies in the astropy codebase
+
+Scope: read-only exploration under `/testbed/astropy` (which is the root of the
+`astropy` package; e.g. `modeling/separable.py` lives at
+`/testbed/astropy/modeling/separable.py`).
+
+Two unrelated "separable" concepts exist in the tree. Only the **modeling**
+one (`astropy.modeling.separable`) is relevant to the `_cstack` fix in
+`separable.py`. The `_separable` / `.separable` hits in `convolution/` and
+`is_separable` in `visualization/wcsaxes/` are different domains (see
+"Dismissed candidates" below).
+
+The core machinery lives in `modeling/separable.py`:
+- `_cstack(left, right)` — the `'&'` operator handler — `separable.py:219-247`
+- `_coord_matrix(...)` — `separable.py:171-216`
+- `_cdot`, `_arith_oper`, `_separable`, `_operators` — `separable.py:250-317`
+- public API `is_separable` (`:27-63`) and `separability_matrix` (`:66-102`),
+  both of which funnel into `_separable` → `_operators[op]` → `_cstack`.
+- `_separable` (`:290-311`) dispatches nested `CompoundModel`s via
+  `_operators[transform.op]`, so a nested `'&'` operand is exactly where
+  `_cstack` handles an ndarray operand (the `else` branches at `:238-245`).
+- `Model._calculate_separability_matrix` hook — `core.py:808-815`; the
+  `Model.separable` property reads `self._separable` — `core.py:1534-1543`;
+  `Model._separable` default (`None`) — `core.py:655`.
+
+## (1) Test files under astropy/modeling/tests mentioning
+## 'separability_matrix', 'is_separable', or '.separable'
+
+### `modeling/tests/test_separable.py`
+(imports at `:13-14`: `from astropy.modeling.separable import
+(_coord_matrix, is_separable, _cdot, _cstack, _arith_oper,
+separability_matrix)`)
+
+- `test_coord_matrix` (`:59-77`) — asserts `_coord_matrix` values, e.g.
+  `assert_allclose(np.array([[1, 1], [0, 0]]), c)` (`:61`) for a
+  non-separable model (`Polynomial2D(1)`).
+- `test_cdot` (`:80-95`) — asserts `_cdot` results, e.g.
+  `assert_allclose(result, np.array([[2, 2], [2, 2]]))` (`:88`).
+- `test_cstack` (`:98-113`) — **direct `_cstack` unit tests** with Model
+  operands and verbatim expected matrices:
+  - `result = _cstack(sh1, scl1)` → `assert_allclose(result,
+    np.array([[1, 0], [0, 1]]))` (`:99-100`)
+  - `result = _cstack(sh1, rot)` →
+    `np.array([[1, 0, 0], [0, 1, 1], [0, 1, 1]])` (`:102-107`)
+  - `result = _cstack(rot, sh1)` →
+    `np.array([[1, 1, 0], [1, 1, 0], [0, 0, 1]])` (`:108-113`)
+  Note: these use **Model** operands only, not ndarray operands, so they do
+  not directly exercise the nested-compound code paths in `_cstack`'s
+  `else` branches (`:238-245`).
+- `test_arith_oper` (`:116-129`) — asserts `_arith_oper` results.
+- `test_separable` (`:132-135`) — parametrized over `compound_models`
+  (`:31-56`); asserts
+  `assert_allclose(is_separable(compound_model), result[0])` and
+  `assert_allclose(separability_matrix(compound_model), result[1])`.
+  The `compound_models` table (`:31-56`) is a set of expected
+  `(is_separable vector, separability_matrix)` pairs, e.g. `cm1` →
+  `(np.array([False, False, True]),
+  np.array([[True, False], [True, False], [False, True]]))` (`:32-35`).
+  Several involve `&` chains but no nested `'&'` operand (see (3)).
+- `test_custom_model_separable` (`:138-150`) — asserts on the `.separable`
+  property and a separability matrix:
+  `assert model_a().separable` (`:143`),
+  `assert not model_c().separable` (`:149`),
+  `assert np.all(separability_matrix(model_c()) == [True, True])` (`:150`).
+- `test_separable_nested_compound` (`:153-163`) — see (3).
+
+### `modeling/tests/test_models.py`
+(import at `:24`: `from astropy.modeling.separable import
+separability_matrix`)
+
+- `test_custom_separability_matrix` (`:1076-1081`) — asserts via
+  `separability_matrix`:
+  ```
+  1076  def test_custom_separability_matrix():
+  1077      original = separability_matrix(ModelDefault(slope=1, intercept=2))
+  1078      assert original.all()
+  1079
+  1080      custom = separability_matrix(ModelCustom(slope=1, intercept=2))
+  1081      assert not custom.any()
+  ```
+  Uses the `_calculate_separability_matrix` hook, not `_cstack`
+  (the hook short-circuits before `_operators` dispatch in
+  `separable.py:304-305`).
+  - Supporting fixture: `ModelDefault._separable = False` (`:1064`);
+    `ModelCustom._calculate_separability_matrix` (`:1072-1073`).
+
+### `modeling/tests/test_core.py`
+(import at `:19`: `from astropy.modeling.separable import
+separability_matrix`)
+
+- `test_custom_model_n_outputs` (`:198-...`) — asserts on
+  `separability_matrix` for multi-output custom models:
+  ```
+  213      assert m.outputs == ('x0', 'x1')
+  214      assert (separability_matrix(m) == [[True, True],
+  215                                         [True, True]]).all()
+  ...
+  225      assert m.outputs == ('x0', 'x1', 'x2')
+  226      assert (separability_matrix(m) == [[True, True, True],
+  227                                         [True, True, True],
+  228                                         [True, True, True]]).all()
+  ```
+  These exercise the `n_inputs==1 and n_outputs>1` early-return path in
+  `is_separable`/`separability_matrix` (`separable.py:57-59, 97-99`), not
+  `_cstack`.
+
+No other test files under `astropy/modeling/tests` (or elsewhere) mention
+these symbols.
+
+## (2) Non-test callers of separability_matrix, is_separable, _cstack,
+## _separable, or _operators
+
+The only non-test consumers are inside `modeling/separable.py` itself:
+- `separable.py:60`  — `is_separable` calls `_separable(transform)`.
+- `separable.py:100` — `separability_matrix` calls `_separable(transform)`.
+- `separable.py:307` — `_separable` calls `_separable(transform.left)` (nested).
+- `separable.py:308` — `_separable` calls `_separable(transform.right)`.
+- `separable.py:309` — `_separable` calls `_operators[transform.op](sepleft, sepright)`.
+- `separable.py:316` — `_operators = {'&': _cstack, '|': _cdot, ...}`
+  (the only place `_cstack` is registered/referenced besides its def at `:219`).
+- `separable.py:237,242` — `_cstack` internally calls `_coord_matrix` (not a
+  caller of the 5 tracked symbols, listed for context).
+
+`_calculate_separability_matrix` (the hook that `_separable` consults) is
+defined at `modeling/core.py:808` and overridden only in the test file
+`modeling/tests/test_models.py:1072`.
+
+The `.separable` **property** (reads `self._separable`) is defined at
+`modeling/core.py:1534` and read in non-test code at exactly one place:
+`separable.py:202` (`if not model.separable:` inside `_coord_matrix`).
+`_separable` (the class attribute) is *set* (not the `_separable` function) in
+non-test code at: `core.py:655` (default `None`), `core.py:2826`
+(`Fittable1DModel`-like base, `= True`), `core.py:4353`
+(`cls._separable = True if (len(inputs) == 1) else False` in the custom_model
+builder), plus per-model assignments in `math_functions.py:66`, `polynomial.py`,
+`rotations.py`, `projections.py`, `spline.py`, `tabular.py`, and
+`functional_models.py` (via the builder). These set the flag consumed by the
+`.separable` property; they do not call the 5 tracked functions.
+
+**There are no non-test callers of `separability_matrix` / `is_separable`
+outside `astropy/modeling`.** A whole-tree search
+(`grep -rn "separability_matrix\|is_separable\|from.*separable import\|
+modeling.separable" . --include=*.py | grep -v "/modeling/"`) returned only the
+unrelated `visualization/wcsaxes/transforms.py:32`. `modeling/fitting.py` does
+not reference separability at all. `modeling/__init__.py:14` re-exports the
+public API (`from .separable import *`) — this is the only public surface.
+
+## (3) Tests constructing a compound model with a NESTED compound operand
+## using '&' and checking separability
+
+- `modeling/tests/test_separable.py` — `test_separable_nested_compound`
+  (`:153-163`) is the **only** such test:
+  ```
+  153  def test_separable_nested_compound():
+  154      # Regression test: a compound model nested as an operand of '&' must
+  155      # give the same separability matrix as the equivalent flat compound
+  156      # model, whether the nested model is the left or right operand.
+  157      nested = separability_matrix(rot & (sh1 & sh2))
+  158      flat = separability_matrix(rot & sh1 & sh2)
+  159      assert_allclose(nested, flat)
+  160
+  161      nested = separability_matrix((sh1 & sh2) & rot)
+  162      flat = separability_matrix(sh1 & sh2 & rot)
+  163      assert_allclose(nested, flat)
+  ```
+  This is the direct regression guard for the nested-operand branches of
+  `_cstack` (`separable.py:238-245`).
+- `modeling/tests/test_separable.py` — `test_separable`'s `compound_models`
+  include multi-`&` chains (e.g. `cm1` `sh1 & sh2 & sh1` at `:32`), but Python
+  chains these into a **flat** left-associated compound, not a nested
+  `(&)`-as-operand, so they are not nested-operand tests. No other test in the
+  tree constructs `X & (A & B)` or `(A & B) & X` and asserts separability.
+
+## Dismissed candidates (matched the search strings but are NOT modeling separability)
+- `convolution/kernels.py:83,156,229,301,899,968,971,983`,
+  `convolution/core.py:41,136,351,364`, `convolution/convolve.py:426,428`,
+  `convolution/tests/test_kernel_class.py:449` — `_separable` / `.separable`
+  are a **kernel** separability flag (2D Gaussian = separable along axes), a
+  totally separate subsystem from modeling. Not affected by the `_cstack` fix.
+- `visualization/wcsaxes/transforms.py:32` (`is_separable = False`) — a
+  matplotlib `Transform` attribute on `CurvedTransform`; unrelated to
+  `astropy.modeling.separable`. Not affected.
+- `modeling/core.py:3080,3136,3237` (`_apply_operators_to_value_lists`) and
+  `modeling/utils.py:412-424` (`special_operators`) — matched the substring
+  "_operators"/"operators" but are compound-model **operator application /
+  special-operator** machinery, not the separability `_operators` dict.
+  Not affected.
+
+## What I looked for and did NOT find
+- No non-test caller of `separability_matrix` or `is_separable` anywhere
+  outside `astropy/modeling` (searched the entire `/testbed/astropy` tree).
+- No test outside the three listed files (`test_separable.py`,
+  `test_models.py`, `test_core.py`) referencing any of the tracked symbols.
+- No separability usage in `modeling/fitting.py`.
+- No documentation files in-tree (the `../astropy` path resolves back into the
+  same package; no separate `doc/` tree was present in scope).
+
+## Commands run (read-only greps / seds)
+1. `grep -rn "separability_matrix\|is_separable\|\.separable\|_separable\|_cstack" . --include=*.py | grep -v .pyc` (full model + convolution + wcsaxes + test hits above)
+2. `cat -n modeling/separable.py`
+3. `cat -n modeling/tests/test_separable.py`
+4. `sed -n '1055,1090p' modeling/tests/test_models.py`
+5. `sed -n '1,30p' / '200,245p' modeling/tests/test_core.py`
+6. `grep -n "^def \|^class " modeling/tests/test_core.py` (to locate `test_custom_model_n_outputs`)
+7. `sed -n '650,660p' / '1520,1545p' / '800,815p' / '2820,2830p' / '4345,4360p' modeling/core.py`
+8. `grep -rn "separability_matrix\|is_separable\|_cstack\|_operators" modeling/ --include=*.py | grep -v "/tests/"`
+9. `grep -rn "\.separable" modeling/ --include=*.py | grep -v "/tests/"`
+10. `grep -rn "separability_matrix\|is_separable\|from.*separable import\|modeling.separable" . --include=*.py | grep -v "/modeling/"` (whole-tree)
+11. `sed -n '20,40p' visualization/wcsaxes/transforms.py`; `grep -n "separab" modeling/fitting.py` (empty)
+12. `grep -n "separability_matrix\|_separable\|_calculate_separability" modeling/tests/test_models.py`; `grep -n "separability_matrix" modeling/tests/test_core.py`

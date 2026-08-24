@@ -100,3 +100,7 @@ def main() -> None:
     if not resolved:
         print("NOTE: Resolved column is empty — pass --eval-report from run_evaluation. "
               "Never fill it by hand (exp2 did; see review.md R3).")
+
+
+if __name__ == "__main__":
+    main()

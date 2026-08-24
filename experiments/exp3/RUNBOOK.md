@@ -135,3 +135,9 @@ Writes `coverage.json` and `results_table.md`, and prints the table for [LOG.md]
 | `EOF` / `tls: handshake failure` mid-pull | retry `docker pull` 2–4× | exp1/exp2 |
 | Local log capture stops, remote keeps running | `nohup` + remote-side redirect | exp2 |
 | `RepeatedFormatError` kills a session | `think` action + `max_consecutive_format_errors: 6` (both new; unvalidated) | exp2-rerun |
+| `docker.io/vastai/kvm:latest` — `manifest unknown` | no `latest` tag exists anymore; use a dated tag, e.g. `ubuntu_cli_22.04-2025-11-21` | exp3 |
+| `ollama/ollama` image doesn't auto-`serve` under `--ssh` launch | vast.ai's ssh wrapper replaces the entrypoint; `nohup ollama serve &` manually after boot | exp3 |
+| `pull_artifacts.sh` silently pulls from `~/` instead of the repo | non-interactive `ssh host 'cmd'` starts in `$HOME`, not the repo — script now `cd`s explicitly | exp3 |
+| `KeyError: 'cost'` crashes every instance at the bookkeeping step | `minion_records` (exp3's rewritten schema) never has `"cost"`; field dropped from `run_exp2_single.py` | exp3 |
+| Uncaught exception (e.g. Ollama's `"no user query found in messages"`) loses the whole session | `run_exp2_single.py` had no `except` around `gru_agent.run()`; now falls back to git-diff like the `RepeatedFormatError` path | exp3 |
+| `python -m orchestrator.analyze_run` runs, prints nothing, writes nothing, exits 0 | missing `if __name__ == "__main__": main()` guard | exp3 |

@@ -1,0 +1,62 @@
+**(1) Tests asserting on `.mask` where at least one operand's mask is `None`:**
+
+| Test | Relevant assertion lines |
+|------|--------------------------|
+| `test_arithmetics_data` | `assert nd.mask is None` (both masks `None`) |
+| `test_arithmetics_data_unit_identical` | `assert nd.mask is None` (both masks `None`) |
+| `test_arithmetics_data_unit_not_identical` | `assert nd.mask is None` (both masks `None`) |
+| `test_arithmetics_data_wcs` | `assert nd.mask is None` (both masks `None`) |
+| `test_arithmetics_data_masks` — param `(None, None)` | `ref_mask = None` → `assert_array_equal(ref_mask, nd3.mask)` |
+| `test_arithmetics_data_masks` — param `(None, False)` | `ref_mask = mask2` (i.e. `False`) → `assert_array_equal(ref_mask, nd3.mask)` |
+| `test_arithmetics_data_masks` — param `(True, None)` | `ref_mask = mask1` (i.e. `True`) → `assert_array_equal(ref_mask, nd3.mask)` |
+| `test_arithmetics_handle_switches` | `assert nd_.mask is None` (handle_mask=None); `assert nd_.mask == mask2` (self.mask=None); `assert nd_.mask == mask1` (self.mask=True, operand.mask=None) |
+
+**(2) OLD vs NEW compatibility per test:**
+
+- **Both-masks-None** (`test_arithmetics_data`, `_data_unit_identical`, `_data_unit_not_identical`, `_data_wcs`, and param `(None, None)`): Neither branch is triggered by the change (self.mask is also None). **Compatible with both OLD and NEW.**
+
+- **`test_arithmetics_data_masks` param `(None, False)`**: self.mask is None → handled by the earlier `self.mask is None` branch (returns `deepcopy(operand.mask)`), never reaches the changed line. **Unaffected; compatible with both.**
+
+- **`test_arithmetics_data_masks` param `(True, None)`**: self.mask=True, operand.mask=None → **directly hits the new `operand.mask is None` branch**, returning `deepcopy(True)`. Test expects `ref_mask = True`. **Expects NEW behaviour (result == surviving raw mask).** With OLD code this call fell through to `handle_mask(True, None)`, which raised `TypeError` under `np.bitwise_or` or produced a degenerate object array under `np.logical_or`.
+
+- **`test_arithmetics_handle_switches`** "Only first has attributes" sub-case: self.mask=True, operand.mask=None → also hits the new branch, returning `deepcopy(True)`. Test expects `nd_.mask == True`. **Expects NEW behaviour.** (Here `handle_mask` is the string `"first_found"`/`"ff"`, which would also resolve to True, so the assertion is satisfied either way.)
+
+**(3) Failure / accident flags:**
+
+- **No test would FAIL under the NEW behaviour.** Every assertion that touches a one-side-None mask expects the surviving mask verbatim, which is exactly what `deepcopy(self.mask)` produces.
+
+- **`test_arithmetics_data_masks` param `(True, None)`** is the one case that would have **failed under the OLD code** (TypeError with `np.bitwise_or`, or a non-boolean object array with `np.logical_or`). If the default `handle_mask` was `np.logical_or`, the test *might* have passed by accident of `np.logical_or(True, None)` coercing `None→False` and yielding `True`; but the output-contract description states `np.logical_or` "silently produced an object array with None entries," so it would have failed even then. **Flag: this test was written to codify the NEW behaviour and would not have passed under OLD semantics.**
+
+**(4) Exact parametrize list of `test_arithmetics_data_masks`:**
+
+```python
+@pytest.mark.parametrize(
+    ("mask1", "mask2"),
+    [
+        (None, None),
+        (None, False),
+        (True, None),
+        (False, False),
+        (True, False),
+        (False, True),
+        (True, True),
+        (np.array(False), np.array(True)),
+        (np.array(False), np.array([0, 1, 0, 1, 1], dtype=np.bool_)),
+        (np.array(True), np.array([[0, 1, 0, 1, 1], [1, 1, 0, 1, 1]], dtype=np.bool_)),
+        (
+            np.array([0, 1, 0, 1, 1], dtype=np.bool_),
+            np.array([1, 1, 0, 0, 1], dtype=np.bool_),
+        ),
+        (
+            np.array([0, 1, 0, 1, 1], dtype=np.bool_),
+            np.array([[0, 1, 0, 1, 1], [1, 0, 0, 1, 1]], dtype=np.bool_),
+        ),
+        (
+            np.array([[0, 1, 0, 1, 1], [1, 0, 0, 1, 1]], dtype=np.bool_),
+            np.array([[0, 1, 0, 1, 1], [1, 1, 0, 1, 1]], dtype=np.bool_),
+        ),
+    ],
+)
+```
+
+No other test in the file re-asserts these exact `(mask1, mask2)` combinations.

@@ -1,0 +1,154 @@
+# RST output class and `header_rows` — findings
+
+All paths relative to the checked-out repo at `/testbed`.
+
+## 1. The RST class and full `__init__` chain
+
+The RST reader/writer is `RST`, defined in **`/testbed/astropy/io/ascii/rst.py:35`**:
+
+```python
+# rst.py:35-66
+class RST(FixedWidth):
+    _format_name = "rst"
+    _description = "reStructuredText simple table"
+    data_class = SimpleRSTData          # line 57
+    header_class = SimpleRSTHeader      # line 58
+
+    def __init__(self):                              # line 60  <-- takes NO arguments
+        super().__init__(delimiter_pad=None, bookend=False)   # line 61
+
+    def write(self, lines):                          # line 63
+        lines = super().write(lines)
+        lines = [lines[1]] + lines + [lines[1]]      # line 65: bookend the position (====) line
+        return lines
+```
+
+Verified live that it currently rejects the kwarg:
+```
+$ python -c "from astropy.io.ascii import RST; RST(header_rows=['name'])"
+TypeError __init__() got an unexpected keyword argument 'header_rows'
+```
+
+Parent classes, full chain with `__init__` signatures:
+
+- **`/testbed/astropy/io/ascii/fixedwidth.py:306`** `class FixedWidth(basic.Basic)` —
+  `fixedwidth.py:339-358`:
+  ```python
+  def __init__(self, col_starts=None, col_ends=None, delimiter_pad=" ",
+               bookend=True, header_rows=None):          # header_rows: line 345
+      if header_rows is None:
+          header_rows = ["name"]                          # line 347-348
+      super().__init__()
+      self.data.splitter.delimiter_pad = delimiter_pad
+      self.data.splitter.bookend = bookend
+      self.header.col_starts = col_starts
+      self.header.col_ends = col_ends
+      self.header.header_rows = header_rows               # line 354
+      self.data.header_rows = header_rows                 # line 355
+      if self.data.start_line is None:
+          self.data.start_line = len(header_rows)         # line 356-357
+  ```
+- **`/testbed/astropy/io/ascii/basic.py:44`** `class Basic(core.BaseReader)` — no `__init__` override (only class attrs `header_class`/`data_class` at basic.py:64-65).
+- **`/testbed/astropy/io/ascii/core.py:1307`** `class BaseReader(metaclass=MetaBaseReader)` —
+  `core.py:1337-1351`:
+  ```python
+  def __init__(self):          # no parameters
+      self.header = self.header_class()
+      self.data = self.data_class()
+      self.inputter = self.inputter_class()
+      self.outputter = self.outputter_class()
+      self.data.header = self.header
+      self.header.data = self.data
+      self.meta = OrderedDict(table=OrderedDict(), cols=OrderedDict())
+  ```
+
+Sibling precedent in the same file: `FixedWidthTwoLine.__init__` (fixedwidth.py:471-477) already forwards `header_rows` to `FixedWidth.__init__` (line 484: `super().__init__(delimiter_pad=..., bookend=..., header_rows=header_rows)`), and `FixedWidthNoHeader.__init__` (fixedwidth.py:405-413) passes `header_rows=[]`.
+
+**Where the parameter would need to be added (for the write path):** the single point is `RST.__init__` at `rst.py:60-61` — change to e.g. `def __init__(self, header_rows=None):` and pass `header_rows=header_rows` into `super().__init__(...)` at `rst.py:61`. No other writer-side plumbing is needed because:
+
+- Writer construction path: `ui.write()` (`/testbed/astropy/io/ascii/ui.py:921`) → `ui.get_writer()` (ui.py:864) → `core._get_writer()` (`/testbed/astropy/io/ascii/core.py:1793`) → `Writer(**writer_kwargs)` at **core.py:1815**, where `writer_kwargs` is everything except `extra_writer_pars` (core.py:1778-1791: delimiter, comment, quotechar, formats, strip_whitespace, names, include_names, exclude_names, fill_values, fill_include_names, fill_exclude_names). `header_rows` is NOT in `extra_writer_pars`, so it flows straight into `RST.__init__`.
+- Reader construction path: `Reader(**kwargs)` at **core.py:1676** and `Reader(**reader_kwargs)` at **core.py:1692**.
+- `FixedWidth.__init__` (fixedwidth.py:339) already sets `self.header.header_rows` and `self.data.header_rows`, so header/data write logic works once the kwarg reaches it.
+
+## 2. Where `header_rows` is actually handled
+
+All occurrences of `header_rows` in the module (grep of `/testbed/astropy/io/ascii/*.py`):
+
+**Read side — `/testbed/astropy/io/ascii/fixedwidth.py`:**
+- `FixedWidthHeader.get_cols` (fixedwidth.py:86, header_rows read at **line 97**):
+  ```python
+  header_rows = getattr(self, "header_rows", ["name"])      # line 97
+  ...
+  line = self.get_line(lines, start_line + header_rows.index("name"))   # line 163
+  ...
+  for ii, attr in enumerate(header_rows):                   # line 168
+      if attr != "name":
+          line = self.get_line(lines, start_line + ii)
+          ...setattr(col, attr, val)
+  ```
+- `FixedWidth.__init__` — fixedwidth.py:345 (param), 347-348 (default `["name"]`), 354-357 (assignment to `self.header.header_rows`, `self.data.header_rows`, and `self.data.start_line = len(header_rows)` when start_line is None).
+- `FixedWidthData.write` (fixedwidth.py:261):
+  ```python
+  default_header_rows = [] if self.header.start_line is None else ["name"]   # line 262
+  header_rows = getattr(self, "header_rows", default_header_rows)            # line 263
+  ...
+  for col_attr in header_rows:          # line 273 — emits one header row per attr
+      vals = ["" if (val := getattr(col.info, col_attr)) is None else str(val)
+              for col in self.cols]
+      hdrs_list.append(vals)
+  ...
+  if self.header.position_line is not None:        # line 289 — position line after header rows
+      vals = [self.header.position_char * width for width in widths]
+      lines.append(self.splitter.join(vals, widths))
+  ```
+- `FixedWidthTwoLine.__init__` (fixedwidth.py:471-487): forwards `header_rows` (line 477/484) and defaults `position_line = len(self.header.header_rows)` (line 486-487).
+- `FixedWidthNoHeader.__init__` (fixedwidth.py:405-413): passes `header_rows=[]`.
+
+**No other file in the package references `header_rows`** (grep covered `astropy/io/ascii/*.py` and found only fixedwidth.py). There is no class named `_BaseHeaderOutput` anywhere in the package (grep returned nothing) — the handling lives in `FixedWidth`/`FixedWidthData`/`FixedWidthHeader` as above.
+
+**RST-specific interaction with `header_rows` (important caveat for the write path):** `SimpleRSTHeader` (rst.py:16-26) has `position_line = 0`, `start_line = 1`, `position_char = "="`, and `SimpleRSTData` (rst.py:29-32) has `start_line = 3`. The write sequence for RST with a multi-row `header_rows` would be, from `FixedWidthData.write` (fixedwidth.py:261-304): `[hdr row 0, hdr row 1, ..., "====" position line, data rows...]`, and then `RST.write` (rst.py:63-66) bookends with `lines[1]`. Note `RST.write` assumes the "====" line is `lines[1]` — with exactly one header row (`["name"]`) that's true; with N header rows the "====" line is `lines[N]`, so `RST.write`'s `lines = [lines[1]] + lines + [lines[1]]` (rst.py:65) would prepend/append the *second header text row* instead of the "====" line. If `header_rows` support is added, either accept this or make the bookend line lookup position-aware. On the read side, `get_cols`'s `start_line + header_rows.index("name")` (fixedwidth.py:163) would point to `1 + index` which is also wrong for RST's geometry (RST puts the "====" line above the name row, at index 0) — RST reading with `header_rows != ["name"]` needs `SimpleRSTHeader`-specific handling if read support is in scope; the write path alone does not.
+
+## 3. RST class definition / MRO
+
+Verified with `python -c "from astropy.io.ascii import RST; print(RST.__mro__)"`:
+```
+<class 'astropy.io.ascii.rst.RST'>
+<class 'astropy.io.ascii.fixedwidth.FixedWidth'>
+<class 'astropy.io.ascii.basic.Basic'>
+<class 'astropy.io.ascii.core.BaseReader'>
+<class 'object'>
+```
+- `RST` (rst.py:35) — overrides `__init__` (rst.py:60) and `write` (rst.py:63).
+- `FixedWidth` (fixedwidth.py:306) — `__init__` at fixedwidth.py:339 with the `header_rows` param; header/data classes `FixedWidthHeader`/`FixedWidthData` (fixedwidth.py:65, 252).
+- `Basic` (basic.py:44) — no `__init__`.
+- `BaseReader` (core.py:1307) — `__init__` at core.py:1337 (zero-arg); `write_header` core.py:1531; `write(table)` core.py:1535 (calls `self.write_header(lines, ...)` and `self.data.write(lines)` at core.py:1580-1581).
+
+RST is exported at `/testbed/astropy/io/ascii/__init__.py:65` (`from .rst import RST`) and used by the io registry via `_format_name = "rst"` (rst.py:55).
+
+## 4. Existing tests
+
+**RST tests — `/testbed/astropy/io/ascii/tests/test_rst.py`** (187 lines):
+- Read tests: `test_read_normal` (:14), `test_read_normal_names` (:33), `test_read_normal_names_include` (:50), `test_read_normal_exclude` (:72), `test_read_unbounded_right_column` (:88), `test_read_unbounded_right_column_header` (:105), `test_read_right_indented_table` (:121), `test_trailing_spaces_in_row_definition` (:139).
+- **The only write test:** `test_write_normal` (test_rst.py:173-187), which does `ascii.write(dat, out, Writer=ascii.RST)` and asserts the exact output:
+  ```
+  ==== ========= ==== ====
+  Col1      Col2 Col3 Col4
+  ==== ========= ==== ====
+   1.2   "hello"    1    a
+   2.4 's worlds    2    2
+  ==== ========= ==== ====
+  ```
+- **No `header_rows` test for RST exists** (grep of `header_rows` in tests/ matched only `test_fixedwidth.py`).
+
+**Pattern tests for `header_rows` (siblings, `/testbed/astropy/io/ascii/tests/test_fixedwidth.py`):**
+- `test_fixed_width_header_rows` (test_fixedwidth.py:564-580): round-trip `ascii.read(..., format="fixed_width", delimiter="|", header_rows=[...])` then `ascii.write(..., header_rows=[...])`, asserts output == input.
+- `test_fixed_width_two_line_header_rows` (test_fixedwidth.py:582-599): same for `fixed_width_two_line`.
+- `test_fixed_width_no_header_header_rows` (test_fixedwidth.py:601-604): asserts `ascii.read(..., format="fixed_width_no_header", header_rows=["unit"])` raises `TypeError, match=r"unexpected keyword argument 'header_rows'"` — i.e. a reader that doesn't accept `header_rows` is expected to raise TypeError; an RST test without the fix would look identical.
+
+Other test files scanned for RST mentions outside test_rst.py: none (grep of `RST` in tests/ only hit test_rst.py).
+
+## 5. Negative space / what was searched
+
+- Searched all `*.py` in `astropy/io/ascii/` for `header_rows`, `RST`, `_BaseHeaderOutput`, `def __init__`, `def write`, `class ` — the full candidate list above is what those searches produced. `_BaseHeaderOutput` does not exist in this codebase.
+- No changes were made anywhere; this was read-only (only `/testbed/astropy/io/ascii/findings.md` was created, inside scope).
+- One assumption worth flagging: `RST.write` at rst.py:65 indexes `lines[1]` assuming exactly one header text row; with multiple `header_rows` this assumption breaks (see §2 caveat). Not a bug today (RST never sets `header_rows` to anything but the default `["name"]`), but relevant if the parameter is being added now.

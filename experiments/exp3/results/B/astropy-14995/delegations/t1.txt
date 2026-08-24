@@ -1,0 +1,195 @@
+## 1) Functions implementing mask propagation during arithmetic
+
+### `NDArithmeticMixin._arithmetic` (the dispatch block)
+
+This is where the decision is made whether to call `_arithmetic_mask` at all. The mask-related block (near the end of `_arithmetic`, just before the `handle_meta` block) is:
+
+```python
+        if handle_mask is None:
+            pass
+        elif hasattr(result, "mask"):
+            # if numpy.ma or astropy.utils.masked is being used, the constructor
+            # will pick up the mask from the masked object:
+            kwargs["mask"] = None
+        elif handle_mask in ["ff", "first_found"]:
+            if self.mask is None:
+                kwargs["mask"] = deepcopy(operand.mask)
+            else:
+                kwargs["mask"] = deepcopy(self.mask)
+        else:
+            kwargs["mask"] = self._arithmetic_mask(
+                operation, operand, handle_mask, axis=axis, **kwds2["mask"]
+            )
+```
+
+The `else` branch is the default path (default `handle_mask=np.logical_or`). It unconditionally forwards to `_arithmetic_mask` regardless of whether either operand's mask is `None`.
+
+### `NDArithmeticMixin._arithmetic_mask` (the combination logic)
+
+Full verbatim body:
+
+```python
+    def _arithmetic_mask(self, operation, operand, handle_mask, axis=None, **kwds):
+        """
+        Calculate the resulting mask.
+
+        This is implemented as the piecewise ``or`` operation if both have a
+        mask.
+
+        Parameters
+        ----------
+        operation : callable
+            see :meth:`NDArithmeticMixin._arithmetic` parameter description.
+            By default, the ``operation`` will be ignored.
+
+        operand : `NDData`-like instance
+            The second operand wrapped in an instance of the same class as
+            self.
+
+        handle_mask : callable
+            see :meth:`NDArithmeticMixin.add`
+
+        kwds :
+            Additional parameters given to ``handle_mask``.
+
+        Returns
+        -------
+        result_mask : any type
+            If only one mask was present this mask is returned.
+            If neither had a mask ``None`` is returned. Otherwise
+            ``handle_mask`` must create (and copy) the returned mask.
+        """
+        # If only one mask is present we need not bother about any type checks
+        if (
+            self.mask is None and operand is not None and operand.mask is None
+        ) or handle_mask is None:
+            return None
+        elif self.mask is None and operand is not None:
+            # Make a copy so there is no reference in the result.
+            return deepcopy(operand.mask)
+        elif operand is None:
+            return deepcopy(self.mask)
+        else:
+            # Now lets calculate the resulting mask (operation enforces copy)
+            return handle_mask(self.mask, operand.mask, **kwds)
+```
+
+### Public entry points (all funnel into the above)
+
+Each public method calls `_prepare_then_do_arithmetic`, which calls `_arithmetic`:
+
+```python
+    def add(self, operand, operand2=None, **kwargs):
+        return self._prepare_then_do_arithmetic(np.add, operand, operand2, **kwargs)
+
+    def subtract(self, operand, operand2=None, **kwargs):
+        return self._prepare_then_do_arithmetic(
+            np.subtract, operand, operand2, **kwargs
+        )
+
+    def multiply(self, operand, operand2=None, **kwargs):
+        return self._prepare_then_do_arithmetic(
+            np.multiply, operand, operand2, **kwargs
+        )
+
+    def divide(self, operand, operand2=None, **kwargs):
+        return self._prepare_then_do_arithmetic(
+            np.true_divide, operand, operand2, **kwargs
+        )
+```
+
+`_prepare_then_do_arithmetic` (three call-sites of `_arithmetic`):
+
+```python
+            result, init_kwds = operand._arithmetic(operation, operand2, **kwargs)
+        elif issubclass(operand2.__class__, NDArithmeticMixin):
+            result, init_kwds = cls._arithmetic(
+                operand,
+                operation,
+                operand2,
+                **kwargs,
+            )
+        else:
+            result, init_kwds = self_or_cls._arithmetic(
+                operation,
+                operand2,
+                **kwargs,
+            )
+```
+
+---
+
+## 2) Where a `None` mask is handled vs. **not** handled
+
+The guard logic in `_arithmetic_mask` is:
+
+| # | Condition | Result |
+|---|-----------|--------|
+| 1 | `self.mask is None` **and** `operand is not None` **and** `operand.mask is None` → or `handle_mask is None` | `return None` ✓ |
+| 2 | `self.mask is None` **and** `operand is not None` (i.e. operand *does* have a mask) | `return deepcopy(operand.mask)` ✓ |
+| 3 | `operand is None` (self.mask may or may not be None) | `return deepcopy(self.mask)` ✓ |
+| 4 | **else** (fall-through) | `return handle_mask(self.mask, operand.mask, **kwds)` ⚠️ |
+
+**The gap (branch 4):** The three guarded branches cover:
+- both masks `None`
+- only `self.mask` is `None`
+- `operand` is `None` (collapse op)
+
+They do **not** cover the case where **`self.mask is not None` and `operand is not None` and `operand.mask is None`**. In that case none of branches 1–3 fire:
+
+- Branch 1: `self.mask is None` → `False` ✗
+- Branch 2: `self.mask is None` → `False` ✗
+- Branch 3: `operand is None` → `False` ✗
+
+So execution falls to the `else` and calls:
+
+```python
+return handle_mask(self.mask, operand.mask, **kwds)
+#                         ^^^^^^^^^^^^^
+#                         operand.mask is None here
+```
+
+With the default `handle_mask=np.logical_or` this becomes `np.logical_or(self.mask, None, **kwds)`, which raises `TypeError` (or produces a wrong-shaped broadcast). The symmetric case (`self.mask is None`, `operand.mask is not None`) *is* caught by branch 2, so the bug is **asymmetric**: it only triggers when the *second* operand lacks a mask.
+
+---
+
+## 3) Helpers in `/testbed/astropy/nddata/core.py`
+
+**Not available in the material provided.** The only file supplied is `/testbed/astropy/nddata/mixins/ndarithmetic.py`. I cannot quote or reference `_as_nDData` or any `core.py` helper that touches `.mask`. If `NDData.__init__` or a class-level `_as_nDData` wrapper normalises a `None` mask into an empty array (or vice-versa), that code is not visible here and would need to be checked separately. Based on the mixin code alone, `self.mask` and `operand.mask` are read as plain attribute access with no intermediate normalisation.
+
+---
+
+## 4) What was searched / ruled out
+
+| Searched for | Finding |
+|---|---|
+| Any other call-site of `handle_mask` besides `_arithmetic` → `_arithmetic_mask` | None. The only place `handle_mask` is *invoked* as a callable on two masks is the final `else` in `_arithmetic_mask`. |
+| A `_as_nDData` or `_ensure_nddata` wrapper that might convert a missing mask to `np.array(False)` before `_arithmetic_mask` sees it | Not present in the provided file. `_prepare_then_do_arithmetic` wraps scalars via `cls(operand2)`, but no mask-normalisation is visible. |
+| A second mask-combination path (e.g. in a `masked` branch) | The `use_masked_arith` / `hasattr(result, "mask")` branch sets `kwargs["mask"] = None` and **skips** `_arithmetic_mask` entirely, so it cannot be the bug site. |
+| `collapse` operations (`sum`, `mean`, `min`, `max`) | They pass `operand=None` into `_arithmetic`, so in `_arithmetic_mask` branch 3 (`operand is None`) fires and the mask is simply `deepcopy(self.mask)`. Not the bug path. |
+| `core.py` | Not in the provided material; ruled out as a source I can cite. |
+
+---
+
+### TL;DR for the fix
+
+The single line that needs a guard is in `NDArithmeticMixin._arithmetic_mask`, the `else` branch:
+
+```python
+        else:
+            # Now lets calculate the resulting mask (operation enforces copy)
+            return handle_mask(self.mask, operand.mask, **kwds)
+```
+
+It fires when `self.mask is not None` and `operand.mask is None`. A guard such as:
+
+```python
+        else:
+            if self.mask is None:
+                return deepcopy(operand.mask)
+            if operand.mask is None:
+                return deepcopy(self.mask)
+            return handle_mask(self.mask, operand.mask, **kwds)
+```
+
+(or equivalently adding `or self.mask is None` to branch 2's condition and a new branch for `operand.mask is None`) would close the gap.

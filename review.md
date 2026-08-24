@@ -113,6 +113,8 @@ In **4 of 5 instances Gru wrote the patch and the minion typed it.** Reading `pr
 
 **Recommendation**: `predictions_all5.json` is intact — re-run `run_evaluation` on it (one VM-hour) and replace the file with genuine output. Until then, the caveat belongs in the Results section where the number is, not only in the artifact.
 
+**Resolved (exp3, 2026-08-23)**: `predictions_all5.json` re-evaluated on real SWE-bench harness (`experiments/exp3/reports/ollama_chat__qwen3.8:27b.exp2_reverify.json`, bundled with exp3's own evaluation per [RUNBOOK.md](experiments/exp3/RUNBOOK.md) step 5). Machine-verified result: **3/5, exactly matching the transcribed verdict** (`12907`/`14995`/`6938` resolved, `14182`/`14365` not). The transcription was correct; no correction needed to exp2's Results or Findings.
+
 ## R4 — exp2 makes a resolve-rate claim its own Phase 1 rule forbids
 
 **Claim**: The issue is not sample size. The experiment had a scoping rule and broke it.
