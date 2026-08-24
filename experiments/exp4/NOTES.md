@@ -1,14 +1,14 @@
 # Experiment 4 — prompting alone changes when Gru considers delegating (and what it costs)
 
-Note tracking a full day's progression, 2026-08-24: eight live runs, same instance
+Note tracking a full day's progression, 2026-08-24: nine live runs, same instance
 (`astropy__astropy-14182`), same model pair (Gru: `openrouter/deepseek/deepseek-v4-pro-0813`,
 minion: `openrouter/deepseek/deepseek-v4-flash-0731`), same everything except Gru's system
-prompt (runs 1-7) and, for run 8, the delegation-reporting mechanism itself. Full
+prompt (runs 1-7, 9) and, for run 8, the delegation-reporting mechanism itself. Full
 rationale for each prompt change: [prompts/gru-loop.md](../../prompts/gru-loop.md)'s
-2026-08-24 revision notes. Raw data for all eight:
-`results/0N-deepseek-v4*/astropy-14182/gru.traj.json` (directories numbered `01`-`08` in the
+2026-08-24 revision notes. Raw data for all nine:
+`results/0N-deepseek-v4*/astropy-14182/gru.traj.json` (directories numbered `01`-`09` in the
 order the runs were actually conducted). Real SWE-bench verdicts (not Gru's self-report)
-for all eight: `reports/*exp4_0N-*.json`.
+for all nine: `reports/*exp4_0N-*.json`.
 
 ## The progression
 
@@ -22,6 +22,7 @@ for all eight: `reports/*exp4_0N-*.json`.
 | 6 | `role.md` rewritten (architect/team-of-engineers metaphor) + *"delegate tasks to minion as much as possible"* | `Submitted`, verified | 31 | — | **1** | ❌ |
 | 7 | same architect framing, urgency wording stripped back out (no cost-min objective, no "as much as possible") | `Submitted`, verified | 39 | 0 | 0 | ❌ |
 | 8 | same as 7, plus the verdict-summary mechanism (below): minion always compiles a summary Gru sees, never the raw patch | `Submitted`, verified | 53 | — | **1** | ✅ |
+| 9 | + DecisionBench-inspired "When delegation is worth it" heuristic and a grounding-discipline line (below) | `Submitted`, verified | 54 | 0 | 0 | ✅ |
 
 ## Run 8: the verification/summary system, and the first success-with-delegation
 
@@ -41,7 +42,7 @@ before this run:
    "verifiability trap" principle is unchanged — this adds visibility, not a new trust
    channel).
 
-Run 8 is the first of eight runs where delegation happened *and* real evaluation passed.
+Run 8 is the first of what were, at the time, eight runs where delegation happened *and* real evaluation passed.
 Mechanically, the summary system worked exactly as designed: the minion's
 `delegations/t1.txt` is a clean `summary.md` + `===PATCH===` + `patch.txt`, and its
 "Not addressed / notes" section reads "None" — an honest, checkable claim, since the
@@ -60,6 +61,51 @@ happened" and reducing the incentive to delegate before finishing the investigat
 this is just this run's own sampling variance is not something one data point can
 separate — turns rose to 53 from run 7's 39, which is at least consistent with more
 investigation before delegating, but n=1 is n=1.
+
+## Run 9: DecisionBench-inspired framing — correct again, but zero delegation
+
+A different kind of change from run 8: not a delegation-reporting mechanism, but a
+decision-heuristic addition to Gru's own prompt, adapted from DecisionBench's published
+orchestrator prompt (user-provided). Two additions, both framed as heuristics ("what
+tends to make X worth it"), not rules ("do X when Y"):
+
+1. `actions.md` gained a short grounding-discipline paragraph: ground factual claims in
+   something actually run or read, not assumption — a generalization of the project's
+   existing verifiability-trap principle beyond pass/fail.
+2. `delegation_and_verification.md` gained a "When delegation is worth it" section:
+   delegate mechanical execution against judgment you've already formed, not because the
+   minion is more skilled (it isn't — it's cheaper); don't delegate when specifying and
+   verifying the work costs more than doing it yourself; don't delegate the judgment
+   calls themselves (diagnosis, deciding the fix, deciding what a check needs to cover).
+
+Result: `Submitted`, verified, **zero delegations**, 54 turns — the highest turn count of
+any run so far, one above run 8's 53. Real SWE-bench evaluation: **resolved**, with the
+read-path fix (`self.data.start_line = len(self.header.header_rows) + 2`) present in the
+patch, entirely Gru's own work.
+
+This is two-for-two correct since the run 5-7 failure streak (runs 8 and 9), but for
+opposite reasons on the delegation axis — run 8 delegated once and succeeded, run 9
+delegated zero times and succeeded. What both share is turn count in the 53-54 range,
+noticeably above run 7's 39 (the last run with this same architect `role.md` but neither
+of run 8 or 9's additions) and back in the range of runs 1-4. That's the closest thing to
+a consistent signal across runs 7, 8, and 9: whatever additions came after run 7 —
+whether the verdict-summary mechanism or the DecisionBench-style heuristics — correlate
+with *more* investigation before committing to an answer, not less, and correctness
+tracked that in both cases. Still n=2 beyond run 7, on one instance, so "these prompt
+additions cause deeper investigation" is a hypothesis this data is consistent with, not
+one it proves — see Caveat below, which now covers three broken theories plus this
+fourth still-standing one.
+
+Worth being explicit about what run 9 does *not* show: checked directly (`grep`ping
+`gru.traj.json`'s messages for "minion"), the word appears exactly once across all 110
+messages — in the system prompt itself. Gru never mentioned, weighed, or declined
+delegation anywhere in its own reasoning; it simply never came up. So the "When
+delegation is worth it" heuristic didn't *suppress* a delegation Gru was considering the
+way runs 5-6's urgency wording *encouraged* one — this run doesn't exercise that heuristic
+at all. Consistent with runs 1 and 4 (also zero delegation, also zero or near-zero minion
+mentions) rather than with runs 2-3's "considered, then declined with a stated reason"
+pattern — this instance's difficulty may simply not be shaped in a way that surfaces
+delegation as a live option most of the time, independent of what the prompt says about it.
 
 Mechanism, not just outcome, for runs 1→4 — each fix targeted a specific thing the
 previous run's own reasoning trace showed was missing, and each one moved the needle on
@@ -87,7 +133,7 @@ exactly that thing:
 - **Run 4 → 5 → 6**: still zero actual delegations through run 4. Landed two
   progressively more direct pushes — an explicit cost-minimization objective (run 5),
   then an explicit "delegate as much as possible" imperative plus an architect/team
-  framing (run 6). Run 6 is the first of eight to actually delegate.
+  framing (run 6). Run 6 is the first of nine to actually delegate.
 - **Run 6 → 7**: stripped the urgency wording back out — kept the architect/team-of-
   engineers role framing, dropped the cost-minimization objective and the "delegate as
   much as possible" imperative. Delegation dropped straight back to zero (as expected,
@@ -106,7 +152,7 @@ first time. The delegation's `verification.checks` were real, independently re-r
 commands (not the minion's self-report) — the "verifiability trap" mechanism worked
 exactly as designed at the mechanical level.
 
-## But: runs 5, 6, and 7 were the only three (of eight) to fail real evaluation
+## But: runs 5, 6, and 7 were the only three (of nine) to fail real evaluation
 
 Checked directly, not inferred — every patch's diff, `grep`ped for the fix's read-path
 line, cross-checked against the real `swebench.harness` report in `reports/`:
@@ -120,6 +166,7 @@ run 5 (05-deepseek-v4-forced):             has start_line fix: False  — NOT re
 run 6 (06-deepseek-v4-architect):          has start_line fix: False  — NOT resolved
 run 7 (07-deepseek-v4-architect-softened): has start_line fix: False  — NOT resolved
 run 8 (08-deepseek-v4-verified-summary):   has start_line fix: True   — resolved
+run 9 (09-deepseek-v4-decisionbench):      has start_line fix: True   — resolved
 ```
 
 The bug fix needs two things: make `RST.write()` handle N header rows (visible directly
@@ -170,33 +217,51 @@ the only prompt-side difference from run 7 is the "What comes back" paragraph ad
 `delegation_and_verification.md`, plus the mechanism change on the minion side. It
 succeeded, at 53 turns. So neither "architect framing" nor "low turn count" alone
 separates runs 5-7 from the rest anymore — run 8 has the framing runs 5-7 shared and the
-result runs 1-4 had. The most turns-consistent read left standing: whatever made runs
-5-7 rush past the read-path requirement wasn't the role framing by itself, and run 8's
-53 turns (compared to run 7's 39, same framing) is the one variable that moved in the
-direction "more investigation, correct diagnosis" would predict — but, as below, this is
-one run, not a controlled comparison.
+result runs 1-4 had. The most turns-consistent read left standing after run 8: whatever
+made runs 5-7 rush past the read-path requirement wasn't the role framing by itself, and
+run 8's 53 turns (compared to run 7's 39, same framing) is the one variable that moved in
+the direction "more investigation, correct diagnosis" would predict.
+
+**Run 9 is a second data point consistent with that same turn-count reading, on a prompt
+change that has nothing to do with the verdict-summary mechanism.** Run 9 kept run 7's
+`role.md` and added the DecisionBench-derived "When delegation is worth it" section
+instead — a completely different addition from run 8's — and also came in above run 7's
+39 turns, at 54, also resolved. Two different post-run-7 additions, both correct, both
+higher-turn-count than run 7, one with delegation and one without. That's the pattern
+left standing after nine runs: turn count (roughly, 53-54 vs. 39 and below) tracks
+correctness better than delegation does, framing does, or urgency-wording does alone —
+but it's now n=2 supporting that reading past run 7, still on one instance, still not a
+controlled comparison (turn count is an outcome of the run, not something that was set
+independently of the prompt change being tested).
 
 ## Caveat
 
 n=1 instance, one model pair, one task shape (a small, self-contained bug fix requiring
-non-obvious two-part reasoning). Eight data points, one continuous progression under
-changing conditions — not eight independent trials, and not a general claim about what
+non-obvious two-part reasoning). Nine data points, one continuous progression under
+changing conditions — not nine independent trials, and not a general claim about what
 makes models delegate, hurry, or diagnose correctly. The turn-count correlation that
 looked clean at n=6 (runs 1-6) did not extend cleanly to run 7, and the `role.md`-framing
-theory that looked plausible after run 7 did not survive run 8 either. Every theory
-proposed so far has been broken by the very next run. That pattern is itself the honest
-takeaway: at n=1-per-condition on one instance, this project cannot yet distinguish a
+theory that looked plausible after run 7 did not survive run 8. Every theory proposed
+through run 8 was broken by the very next run; run 9 is the first run that's *consistent*
+with the reading left standing (turn count, not delegation or framing, is what tracks
+correctness) rather than breaking it — but one consistent data point after two broken
+theories is not confirmation, and "run 9 didn't break it" is a lower bar than "run 9
+proves it." At n=1-per-condition on one instance, this project still cannot distinguish a
 real causal mechanism from this instance's own run-to-run variance. Nothing here should
-be read as "the verification/summary system fixed the problem" — run 8 is one success,
-immediately following three failures, on a task that four earlier runs (1-4) also solved
-without any of this machinery.
+be read as "the verification/summary system" or "the DecisionBench heuristics" fixed the
+problem — runs 8 and 9 are two successes right after three failures, on a task that four
+earlier runs (1-4) also solved without any of this machinery, and run 9 in particular
+solved it with zero delegation, so it cannot be attributed to the delegation mechanism at
+all.
 
 ## Next
 
-1. **Repeat run 8's exact prompt + mechanism on several fresh sessions** (same instance)
-   before concluding anything about the verification/summary system's effect — one
-   success right after three straight failures is exactly the kind of result that needs
-   a repeat before it's trusted over "this instance's variance."
+1. **Repeat runs 8 and 9's exact prompts/mechanisms on several fresh sessions** (same
+   instance) before concluding anything about either addition's effect — two successes
+   right after three straight failures is exactly the kind of result that needs repeats
+   before it's trusted over "this instance's variance." This is the highest-value next
+   step: it directly tests the one hypothesis (turn count / investigation depth) that
+   has survived two rounds of being checked against a new run instead of breaking.
 2. **Repeat runs 6 and 7's exact prompts on fresh sessions** (or a different instance) to
    check whether either earlier result — run 6's failure-with-delegation or run 7's
    failure-without-urgency — was a repeatable property of its prompt, or also just
