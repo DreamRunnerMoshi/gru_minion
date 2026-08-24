@@ -1,0 +1,1 @@
+- **`delegate_to_minion`** — hand a piece of work to the minion.

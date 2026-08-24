@@ -1,0 +1,1 @@
+- **`think`** — spend a turn on a decision instead of on work. Nothing runs, no minion is charged.

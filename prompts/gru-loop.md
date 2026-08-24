@@ -1,8 +1,14 @@
 # Gru — the continuous agentic loop
 
-Gru's prompt. **The text below is extracted verbatim from `orchestrator/config/gru.yaml`**, which is the loaded copy — regenerate this file from that one rather than editing it by hand.
+Gru's prompt. **The "System prompt" block below is the `gru.yaml` variant's text, composed from fragments** under `orchestrator/prompts/gru/` — regenerate it from `orchestrator/prompt_fragments.compose(...)` rather than editing it by hand (`.venv/bin/python -c "from orchestrator.gru_config import load_gru_config; print(load_gru_config('gru.yaml')['agent']['system_template'])"`).
 
-**Revised 2026-08-24.** Stripped the prescriptive "What to delegate" section (the "token-heavy and judgement-light" framing, the two-part "before delegating" checklist) and removed `run_check`'s write-rejection enforcement (`_looks_like_repo_write`, added the day before). This is an explicit design decision, not a bugfix: **do not force Gru's delegation behavior**, even running a smaller model that may under-delegate relative to what a frontier model would eventually do on its own. The previous day's work treated "Gru isn't delegating enough" as a defect to engineer around — first with prompt criteria, then with harness-level command rejection when the criteria alone didn't hold. Both are the same mistake from this decision's point of view: the point of the experiment is to observe what a model given a minion actually chooses to do with it. If a smaller model chooses not to delegate, or delegates badly, that is the finding — not something to correct until the numbers look right. The prompt now says only that a minion exists and is cheaper, and leaves the delegation judgement entirely to Gru.
+**Revised 2026-08-24, second change: modularized into fragments + `ToolPolicy`.** `gru.yaml`'s system prompt was one hand-written block; trying a leaner variant meant either duplicating shared paragraphs into a second block or hand-editing the one that existed. Split it into small reusable pieces (`orchestrator/prompts/gru/*.md`) that a config now lists (`agent.system_template_fragments`) instead of embedding text directly — `gru.yaml` renders to the same prompt it always did, just assembled instead of typed once.
+
+Prompt text alone couldn't express "no verification step, no failure handling" honestly, though — `finish` mechanically required a non-empty `final_verification.checks` and `delegate_to_minion` mechanically required `verification.checks` whenever `returns='verdict'`, regardless of what the prompt said about them. So `orchestrator/gru_toolcall.py` gained `ToolPolicy`: four independent toggles (`allow_think`, `allow_run_check`, `allow_verdict`, `require_finish_verification`) that shape the actual tool schemas sent to the model (`build_tools(policy)`) and the validation applied to what comes back (`parse_gru_actions(..., policy=policy)`), not just the wording around them. A tool or field the policy excludes is rejected the same way an unknown tool name always was — not silently accepted because the prompt just didn't mention it. `orchestrator/config/gru-minimal.yaml` is the first config to use this: fragments for just `role` + `delegate_to_minion` + a bare `finish`, and a policy that turns off `think`, `run_check`, `verdict` delegations, and finish verification entirely — see "The fragment library and bit-by-bit variants" below.
+
+This is deliberately the only thing `ToolPolicy` does: define which session is running (what exists to be used at all), never nudge how Gru uses what it's given — same principle as the first 2026-08-24 change below, just extended to the two places prompt wording alone couldn't reach.
+
+**Revised 2026-08-24, first change.** Stripped the prescriptive "What to delegate" section (the "token-heavy and judgement-light" framing, the two-part "before delegating" checklist) and removed `run_check`'s write-rejection enforcement (`_looks_like_repo_write`, added the day before). This is an explicit design decision, not a bugfix: **do not force Gru's delegation behavior**, even running a smaller model that may under-delegate relative to what a frontier model would eventually do on its own. The previous day's work treated "Gru isn't delegating enough" as a defect to engineer around — first with prompt criteria, then with harness-level command rejection when the criteria alone didn't hold. Both are the same mistake from this decision's point of view: the point of the experiment is to observe what a model given a minion actually chooses to do with it. If a smaller model chooses not to delegate, or delegates badly, that is the finding — not something to correct until the numbers look right. The prompt now says only that a minion exists and is cheaper, and leaves the delegation judgement entirely to Gru.
 
 Two things were deliberately kept despite this: the mechanical shape of a delegation (`returns`/`mode`, still required fields — a minion still has to be told what to give back and how, that's not a delegation-behavior question) and the `RepeatedFormatError` escalation from earlier that same day (`orchestrator/gru_toolcall.py`'s `_escalation_prefix`). The latter isn't a boundary case of "don't force Gru" — it's format-compliance scaffolding that lets a session finish at all, agnostic to which of the four actions Gru ends up taking; it doesn't push toward delegation specifically.
 
@@ -35,12 +41,15 @@ You have a minion available: a companion LLM, cheaper to run than you. Delegate 
 
 You work one step at a time: think about what you need next, take exactly one action, see what comes back, decide the next step from there. Do not plan the whole task upfront — you do not know enough yet to specify later steps precisely.
 
-## Your four actions
+## Your actions
 
-1. **`delegate_to_minion`** — hand a piece of work to the minion.
-2. **`think`** — spend a turn on a decision instead of on work. Nothing runs, no minion is charged.
-3. **`run_check`** — run a shell command against the repository yourself and see the result.
-4. **`finish`** — declare the task complete, with a verification that should confirm it.
+- **`delegate_to_minion`** — hand a piece of work to the minion.
+
+- **`think`** — spend a turn on a decision instead of on work. Nothing runs, no minion is charged.
+
+- **`run_check`** — run a shell command against the repository yourself and see the result.
+
+- **`finish`** — declare the task complete, with a verification that should confirm it.
 
 Exactly one action per turn.
 
@@ -64,6 +73,36 @@ You do not have access to the hidden tests that will actually grade this task �
 
 Every check you write, at any level, is a shell command; exit code 0 means pass. Keep them concrete and runnable, not descriptions of what a check should do.
 ```
+
+## The fragment library and bit-by-bit variants
+
+Fragments live under `orchestrator/prompts/gru/`, one small piece of prompt text per file:
+
+| Fragment | Contains |
+|---|---|
+| `role.md` | Who Gru is, that a minion exists, one-step-at-a-time framing. Always included. |
+| `actions_header.md` | `## Your actions` |
+| `action_delegate.md` | The `delegate_to_minion` bullet. Always included. |
+| `action_think.md` | The `think` bullet. |
+| `action_run_check.md` | The `run_check` bullet. |
+| `action_finish.md` | The `finish` bullet, mentioning verification. |
+| `action_finish_bare.md` | The `finish` bullet without mentioning verification — for a session where it isn't required. |
+| `actions_footer.md` | `Exactly one action per turn.` |
+| `delegation_shape.md` | Full `returns`/`mode` explanation (both `findings` and `verdict`). |
+| `delegation_shape_findings_only.md` | `mode`-only explanation, for a session where `verdict` isn't offered. |
+| `failure_handling.md` | The "On failure" section. |
+| `verification_guidance.md` | The "Authoring final_verification" section. |
+
+A config picks a list (`agent.system_template_fragments`) and, if it wants anything other than the fully-permissive default, a `tool_policy` block (`allow_think`, `allow_run_check`, `allow_verdict`, `require_finish_verification` — see the second 2026-08-24 revision note above for why the policy exists separately from the fragment choice). `orchestrator/gru_config.load_gru_config(filename)` resolves both; `run_exp2_single.py` and `tests/harness.py` both call it instead of a plain `yaml.safe_load`.
+
+**Variants so far:**
+
+- **`gru.yaml`** — the full set: all four actions, `verdict` delegations allowed, `finish` requires verification. This file's own prompt, above.
+- **`gru-minimal.yaml`** (2026-08-24) — step 1 of a bit-by-bit ablation: `role` + `action_delegate` + `action_finish_bare` + `delegation_shape_findings_only`, policy turns off `think`, `run_check`, `verdict`, and finish verification entirely. Just delegation and handling whatever comes back — see that file's own header comment for the rationale. `tests/test_minimal_variant.py` confirms the excluded pieces are genuinely rejected, not just unmentioned.
+
+**Adding the next step** (add verification back, then failure handling, then think/run_check) is additive: point a new config at `gru-minimal.yaml`'s fragment list plus the piece being reintroduced (e.g. `+ verification_guidance`, `require_finish_verification: true`), rather than writing a new prompt from scratch or editing `gru-minimal.yaml` in place.
+
+`gru-taxonomy.yaml` (the arm A taxonomy control, predates this system) still uses a literal `agent.system_template` block — `load_gru_config` leaves that path untouched, so it keeps working unconverted.
 
 ## User/task template
 

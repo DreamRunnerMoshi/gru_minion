@@ -24,6 +24,7 @@ import yaml
 from minisweagent.agents.default import DefaultAgent
 from minisweagent.environments.local import LocalEnvironment
 
+from orchestrator.gru_config import load_gru_config
 from orchestrator.gru_environment import GruEnvironment
 from orchestrator.gru_model import GruModel
 from tests.mock_llm import ScriptedLLM, Step
@@ -88,12 +89,14 @@ def run_session(
     repo = make_scratch_repo(tmp_path, repo_files)
     env = ScratchEnvironment(cwd=str(repo))
 
-    gru_cfg = load_yaml(gru_config)
+    gru_cfg = load_gru_config(gru_config)
     minion_cfg = load_yaml("minion.yaml")
 
     llm = ScriptedLLM(steps)
     with patch("litellm.completion", llm):
-        gru_model = GruModel(model_name="mock/gru", model_kwargs=gru_cfg["model"]["model_kwargs"])
+        gru_model = GruModel(
+            model_name="mock/gru", model_kwargs=gru_cfg["model"]["model_kwargs"], policy=gru_cfg["tool_policy"]
+        )
         minion_model_kwargs = {"model_name": "mock/minion", "model_kwargs": minion_cfg["model"]["model_kwargs"]}
         minion_agent_kwargs = {
             k: v for k, v in minion_cfg["agent"].items() if k not in ("system_template", "instance_template")

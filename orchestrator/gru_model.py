@@ -8,12 +8,17 @@ import litellm
 from minisweagent.exceptions import FormatError
 from minisweagent.models.litellm_model import LitellmModel
 
-from orchestrator.gru_toolcall import GRU_TOOLS, format_gru_observation_messages, parse_gru_actions
+from orchestrator.gru_toolcall import ToolPolicy, build_tools, format_gru_observation_messages, parse_gru_actions
 
 
 class GruModel(LitellmModel):
-    def __init__(self, **kwargs):
+    def __init__(self, *, policy: ToolPolicy | None = None, **kwargs):
         super().__init__(**kwargs)
+        # Which of Gru's actions/fields this session actually offers — added 2026-08-24
+        # for bit-by-bit prompt experimentation (orchestrator/prompt_fragments.py).
+        # Defaults to the original fully-permissive behavior.
+        self._policy = policy or ToolPolicy()
+        self._tools = build_tools(self._policy)
         # Consecutive FormatErrors on this model instance (one per Gru session), so
         # parse_gru_actions can escalate its correction text instead of repeating the same
         # message every retry — see gru_toolcall.py's _escalation_prefix. Reset on any clean
@@ -26,7 +31,7 @@ class GruModel(LitellmModel):
             return litellm.completion(
                 model=self.config.model_name,
                 messages=messages,
-                tools=GRU_TOOLS,
+                tools=self._tools,
                 **(self.config.model_kwargs | kwargs),
             )
         except litellm.exceptions.AuthenticationError as e:
@@ -41,6 +46,7 @@ class GruModel(LitellmModel):
                 format_error_template=self.config.format_error_template,
                 template_kwargs={"finish_reason": response.choices[0].finish_reason},
                 consecutive_format_errors=self._consecutive_format_errors,
+                policy=self._policy,
             )
         except FormatError:
             self._consecutive_format_errors += 1

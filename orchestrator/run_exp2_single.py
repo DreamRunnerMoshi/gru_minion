@@ -40,6 +40,7 @@ from minisweagent.run.benchmarks.swebench import DATASET_MAPPING, get_sb_environ
 
 from orchestrator.gru_environment import GruEnvironment  # noqa: E402
 from orchestrator.gru_model import GruModel  # noqa: E402
+from orchestrator.gru_config import load_gru_config  # noqa: E402
 from orchestrator.cache_stats import extract_cache_stats, merge_cache_stats  # noqa: E402
 from orchestrator.token_usage import extract_token_usage  # noqa: E402
 from minisweagent.agents.default import DefaultAgent  # noqa: E402
@@ -73,7 +74,7 @@ def main() -> None:
     instance = instances[args.instance]
 
     session_config = load_yaml(CONFIG_DIR / "session.yaml")
-    gru_config = load_yaml(CONFIG_DIR / args.gru_config)
+    gru_config = load_gru_config(args.gru_config)
     logger.info(f"Using Gru config: {args.gru_config}")
     minion_config = load_yaml(CONFIG_DIR / "minion.yaml")
 
@@ -84,6 +85,7 @@ def main() -> None:
         gru_model = GruModel(
             model_name=args.model,
             model_kwargs={**gru_config["model"]["model_kwargs"], "api_base": args.api_base},
+            policy=gru_config["tool_policy"],
         )
         minion_model_kwargs = {
             "model_name": args.model,

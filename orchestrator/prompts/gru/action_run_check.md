@@ -1,0 +1,1 @@
+- **`run_check`** — run a shell command against the repository yourself and see the result.
