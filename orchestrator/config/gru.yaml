@@ -15,9 +15,23 @@
 # handling, just delegate_to_minion and a bare finish) could be built by choosing a
 # different fragment list instead of hand-writing a second long string. See
 # prompts/gru-loop.md for the fuller rationale on both changes.
+#
+# Revised 2026-08-24, fourth change: added task_workflow + boundaries fragments, and
+# switched instance_template to the <pr_description> wrapper mini-swe-agent's own
+# stock SWE-bench prompt uses. Rationale (explicit user framing): deployed for real,
+# a user just gives Gru an instruction and expects it followed with the same rigor a
+# solo coding agent would bring — delegation is an internal efficiency mechanism, not
+# something that should mean Gru gets *less* context than a solo deployment would.
+# Not a verbatim copy of the stock prompt, though — that prompt assumes a raw `bash`
+# tool and a shell-echo submission ritual, neither of which Gru has (delegate_to_minion/
+# think/run_check/finish; finish already is the submission mechanism). Adapted the
+# actually-transferable content (boundaries on what not to touch, the recognize-fix-
+# verify workflow shape) instead of pasting instructions Gru can't act on.
 agent:
   system_template_fragments:
     - role
+    - task_workflow
+    - boundaries
     - actions_header
     - action_delegate
     - action_think
@@ -29,9 +43,10 @@ agent:
     - verification_guidance
 
   instance_template: |
-    <task>
+    <pr_description>
+    Consider the following PR description:
     {{ task_description }}
-    </task>
+    </pr_description>
 
     <repository_context>
     {{ repo_name }}, accessible at {{ repo_path_or_access_instructions }}

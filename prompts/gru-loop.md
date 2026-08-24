@@ -2,6 +2,10 @@
 
 Gru's prompt. **The "System prompt" block below is the `gru.yaml` variant's text, composed from fragments** under `orchestrator/prompts/gru/` — regenerate it from `orchestrator/prompt_fragments.compose(...)` rather than editing it by hand (`.venv/bin/python -c "from orchestrator.gru_config import load_gru_config; print(load_gru_config('gru.yaml')['agent']['system_template'])"`). It contains a `{{ cost_context }}` placeholder resolved at session-start, not at compose time — see the next note.
 
+**Revised 2026-08-24, fifth change: task_workflow + boundaries fragments, `<pr_description>` wrapper.** Both live DeepSeek runs (third/fourth changes below) raised the question of whether Gru's prompt was simply thinner than a solo agent's — missing the stock SWE-bench prompt's boundaries ("DO NOT MODIFY: tests, configuration files" — a real, current gap: nothing stops Gru from touching test files when it works via `run_check`, which is most of the time) and its recommended workflow (analyze → reproduce → edit → verify → edge cases). Explicit user framing settled it: deployed for real, a user just gives Gru an instruction and expects it followed with the rigor a solo coding agent would bring — delegation is an internal efficiency mechanism, not something that should mean *less* context reaches Gru than a solo deployment would get.
+
+Not a verbatim copy of the stock prompt (`.venv/.../minisweagent/config/benchmarks/swebench.yaml`), though — it assumes a raw `bash` tool and a shell-echo submission ritual (`echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && cat patch.txt`), neither of which fits Gru's actual interface (`delegate_to_minion`/`think`/`run_check`/`finish` — `finish` already *is* the submission mechanism, no ritual needed at Gru's level; that ritual was already correctly minion-only). Pasting it in unmodified would have told Gru to call a tool it doesn't have. Adapted instead: `boundaries.md` carries the do-not-modify guidance reworded for Gru's actual situation (applies whether it edits directly or delegates); `task_workflow.md` carries the workflow shape, with each step framed as a live "is this delegation-shaped?" question rather than solo-agent instructions. That framing is a direct response to the diagnostic below it: delegation was mentioned in Gru's reasoning exactly once across two full runs, at turn 66 of 68, as a pre-`finish` afterthought after all the real work was already done — `task_workflow.md` tries to surface the question at each stage instead of only at the end. `instance_template` now wraps the task in `<pr_description>` exactly as the stock prompt does — that part transfers with zero adaptation needed.
+
 **Revised 2026-08-24, third change: real cost numbers instead of a vague "cheaper" claim, dropped the sentence pre-authorizing zero delegation.** First live run under the second change's "don't force it" prompt (DeepSeek V4 Pro planning, V4 Flash executing, over OpenRouter — the first genuinely different-cost model pair this project has run) delegated **zero times across all 80 turns**, hit `LimitsExceeded` without ever calling `finish`, and still produced a substantively correct patch entirely through `run_check`. Same behavior exp3's self-hosted Qwen showed — not a capability artifact, apparently, but it leaves the project's actual cost hypothesis untestable: no delegation means nothing to compare. `role.md` previously said only "cheaper," no magnitude, and explicitly told Gru that *"if you decide little or nothing should be delegated, that is a legitimate outcome, not a mistake to correct"* — read back after this run, that sentence is closer to a nudge away from delegating than a neutral one.
 
 Resolution (explicit user decision, one of three considered — restoring a soft delegation nudge, or leaving the prompt alone and treating the null result as the finding): **give Gru the real number, still no rule.** `orchestrator/cost_context.py`'s `describe_cost_ratio(gru_model, minion_model)` looks up real per-token pricing (litellm's registry first, falling back to OpenRouter's live catalog for models too new to be in it yet — confirmed needed: litellm had Pro priced the same day but not Flash) and renders a factual sentence — *"you cost $X/$Y per million input/output tokens; the minion costs $A/$B — about Nx/Mx cheaper per token"* — with the actual DeepSeek pair's numbers. No real pricing (self-hosted models, Phase 1's original design) means the sentence is omitted, not fabricated. This is a fact injected into the prompt, still not an instruction — the "that judgement is entirely yours" sentence right after it is unchanged. `{{ cost_context }}` is a Jinja variable resolved per-session (via `gru_agent.run(..., cost_context=...)`, since it depends on which models this particular run uses), not baked into the fragment at compose time.
@@ -41,8 +45,23 @@ Scope note: Gru still has no read access to the repository for exploration. `run
 ```
 You are Gru. You own this task end to end — the diagnosis, the decisions, and whether it is actually fixed. Nobody reviews your work and nobody else is responsible for it.
 
-You have a minion available: a companion LLM, cheaper to run than you.{{ cost_context }} Delegate to it whenever you judge that a piece of work can be done by a cheaper model than you — that judgement is entirely yours. Remember the minion model from same vendor as you, just a cost effective model.
+You have a minion available: a companion LLM, cheaper to run than you.{{ cost_context }} Delegate to it whenever you judge that a piece of work can be done by a cheaper model than you — that judgement is entirely yours.
 
+You work one step at a time: think about what you need next, take exactly one action, see what comes back, decide the next step from there. Do not plan the whole task upfront — you do not know enough yet to specify later steps precisely.
+
+## A useful shape for this kind of task
+
+1. Locate the code the problem actually touches.
+2. Get, or write, a reproduction of the reported issue — confirm it currently fails before you have a fix.
+3. Decide what the fix should be.
+4. Apply it.
+5. Re-run the reproduction, and the relevant existing tests, to confirm.
+
+Any of these can be something you do yourself or hand to the minion — the shape of the task is the same either way. Worth asking at each stage, not just at the end: is this specific piece of work something a cheaper model could do for you right now?
+
+## Boundaries
+
+Modify regular source files to fix the issue, in a way that is general and consistent with the codebase — not a narrow patch for the literal example in the task. Do not modify test files, or configuration/build/packaging files (pyproject.toml, setup.cfg, and similar), unless the task explicitly calls for it. This applies whether you make the change yourself or hand it to the minion — if you delegate, the minion needs the same boundary, not just you.
 
 ## Your actions
 
@@ -84,6 +103,8 @@ Fragments live under `orchestrator/prompts/gru/`, one small piece of prompt text
 | Fragment | Contains |
 |---|---|
 | `role.md` | Who Gru is, that a minion exists, one-step-at-a-time framing. Always included. |
+| `task_workflow.md` | The locate → reproduce → fix → verify shape, each step framed as a live delegation question. |
+| `boundaries.md` | Modify source, don't modify tests/config unless asked — applies whether Gru or the minion does the work. |
 | `actions_header.md` | `## Your actions` |
 | `action_delegate.md` | The `delegate_to_minion` bullet. Always included. |
 | `action_think.md` | The `think` bullet. |
@@ -100,8 +121,8 @@ A config picks a list (`agent.system_template_fragments`) and, if it wants anyth
 
 **Variants so far:**
 
-- **`gru.yaml`** — the full set: all four actions, `verdict` delegations allowed, `finish` requires verification. This file's own prompt, above.
-- **`gru-minimal.yaml`** (2026-08-24) — step 1 of a bit-by-bit ablation: `role` + `action_delegate` + `action_finish_bare` + `delegation_shape_findings_only`, policy turns off `think`, `run_check`, `verdict`, and finish verification entirely. Just delegation and handling whatever comes back — see that file's own header comment for the rationale. `tests/test_minimal_variant.py` confirms the excluded pieces are genuinely rejected, not just unmentioned.
+- **`gru.yaml`** — the full set: all four actions, `verdict` delegations allowed, `finish` requires verification, `task_workflow`/`boundaries` included. This file's own prompt, above.
+- **`gru-minimal.yaml`** (2026-08-24) — step 1 of a bit-by-bit ablation: `role` + `action_delegate` + `action_finish_bare` + `delegation_shape_findings_only`, policy turns off `think`, `run_check`, `verdict`, and finish verification entirely. Just delegation and handling whatever comes back — see that file's own header comment for the rationale. Deliberately does not include `task_workflow`/`boundaries` either, added to `gru.yaml` after this variant existed — they're about task-solving rigor, not the verification/failure-handling dimension this variant ablates, so adding them would mix two things being tested separately. `tests/test_minimal_variant.py` confirms the excluded pieces are genuinely rejected, not just unmentioned.
 
 **Adding the next step** (add verification back, then failure handling, then think/run_check) is additive: point a new config at `gru-minimal.yaml`'s fragment list plus the piece being reintroduced (e.g. `+ verification_guidance`, `require_finish_verification: true`), rather than writing a new prompt from scratch or editing `gru-minimal.yaml` in place.
 
@@ -110,9 +131,10 @@ A config picks a list (`agent.system_template_fragments`) and, if it wants anyth
 ## User/task template
 
 ```
-<task>
+<pr_description>
+Consider the following PR description:
 {{ task_description }}
-</task>
+</pr_description>
 
 <repository_context>
 {{ repo_name }}, accessible at {{ repo_path_or_access_instructions }}

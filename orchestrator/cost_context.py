@@ -60,20 +60,37 @@ def _price_per_million(model: str) -> tuple[float, float] | None:
     return _litellm_price_per_million(model) or _openrouter_price_per_million(model)
 
 
+def _vendor(model: str) -> str | None:
+    """Best-effort vendor/family extraction for the openrouter/<vendor>/<slug> shape
+    litellm uses — the only shape this project has needed a vendor comparison for so
+    far. Returns None for anything else (e.g. self-hosted ollama_chat/<tag> has no
+    vendor segment to compare) rather than guessing wrong."""
+    parts = model.split("/")
+    if len(parts) >= 3 and parts[0] == "openrouter":
+        return parts[1]
+    return None
+
+
 def describe_cost_ratio(gru_model: str, minion_model: str) -> str:
-    """Returns a sentence fragment (leading space included, empty string if no real
-    pricing is known for both models) — designed to be spliced directly after "a
-    companion LLM, cheaper to run than you." in role.md."""
+    """Returns a sentence fragment (leading space included, empty string if there's
+    nothing real to say) — designed to be spliced directly after "a companion LLM,
+    cheaper to run than you." in role.md. Two independent facts, each stated only when
+    actually known/true: relative cost, and same model family."""
+    parts = []
+
     gru_price = _price_per_million(gru_model)
     minion_price = _price_per_million(minion_model)
-    if not gru_price or not minion_price:
-        return ""
-    gru_in, gru_out = gru_price
-    min_in, min_out = minion_price
-    if min_in <= 0 or min_out <= 0:
-        return ""
-    return (
-        f" Concretely, this session: you cost ${gru_in:.2f} / ${gru_out:.2f} per million "
-        f"input/output tokens; the minion costs ${min_in:.3f} / ${min_out:.3f} — "
-        f"about {gru_in / min_in:.0f}x / {gru_out / min_out:.0f}x cheaper per token."
-    )
+    if gru_price and minion_price and minion_price[0] > 0 and minion_price[1] > 0:
+        gru_in, gru_out = gru_price
+        min_in, min_out = minion_price
+        parts.append(
+            f"Concretely, this session: you cost ${gru_in:.2f} / ${gru_out:.2f} per million "
+            f"input/output tokens; the minion costs ${min_in:.3f} / ${min_out:.3f} — "
+            f"about {gru_in / min_in:.0f}x / {gru_out / min_out:.0f}x cheaper per token."
+        )
+
+    gru_vendor, minion_vendor = _vendor(gru_model), _vendor(minion_model)
+    if gru_vendor and gru_vendor == minion_vendor:
+        parts.append(f"Same model family as you ({gru_vendor}), just the cost-efficient tier.")
+
+    return (" " + " ".join(parts)) if parts else ""
