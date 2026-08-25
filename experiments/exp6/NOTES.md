@@ -96,16 +96,56 @@ possible to say whether that's a real pattern (GAIA's mostly-search-then-synthes
 shape may just not decompose into many delegable sub-pieces the way a multi-file
 code fix does) or noise — worth checking once a bigger batch runs.
 
+## Results: the full Level 3 batch (18 instances)
+
+Following the pilot, ran all 18 remaining Level 3 no-file instances (the harder,
+more multi-step tier — 872bfbb1 from the pilot was the 19th and only Level 3
+instance already covered) on the same glm-paired setup, since per-instance cost is
+small enough (~$0.01-0.09) to make this cheap even at Level 3's longer,
+more-multi-hop shape.
+
+**First pass, 11/18 crashed with a real OpenRouter 402 (insufficient credit), not
+a capability finding.** The account balance ran slightly negative
+(`total_credits=$10.00`, `total_usage=$10.06`) partway into the batch — confirmed
+from the actual OpenRouter error text (`"This request requires more credits...
+code:402"`, not an inference from a truncated log line). Every instance that
+started before the user's top-up crashed after minutes of exponential-backoff
+retries; every instance that started after it completed cleanly with zero API
+errors. The 11 crashed instances were deleted and rerun after the top-up.
+
+**Second pass — also a live test of running instances in parallel instead of
+sequentially.** Host utilization during the sequential runs was checked directly:
+~6% RAM, ~0% CPU load across 21 cores — this workload is network-bound (waiting on
+OpenRouter/Tavily), not compute-bound, so there was no real reason for the batch
+script's sequential loop other than that's how the SWE-bench batch scripts were
+written (where sequential order mattered for a different reason — budget-safety
+checkpointing between runs, not technical necessity). Confirmed live: launched the
+last 5 retries as concurrent background processes instead of a loop, watched
+`ps`/`free -h` show 5 genuinely distinct processes each pulling real API responses
+in parallel, all completed cleanly. No rate-limiting or other cross-instance
+interference observed at this concurrency (5 parallel).
+
+### Level 3 results (18 instances, all real answers, zero crashes after the retry)
+
+**9/18 resolved (50%).** Combined with the pilot: **12/23 across both batches
+(52%)**, $0.92 total Gru cost, minion token share 56.6% of everything moved
+(4.22M Gru tokens vs. 5.50M minion tokens) — even though most individual instances
+never delegated at all, the ones that did moved the majority of the batch's total
+token volume. Two more `RepeatedFormatError`s (`c3a79cfe`, `ebbc1f13`) — worth
+checking later whether these are the same missing-`scope` pattern as the pilot's
+`872bfbb1` failure or a different format mistake.
+
 ## What's still open
 
-n=5 is nowhere near enough to say anything about resolve rate, delegation rate, or
-cost-shift patterns with confidence — this pilot's job was proving the harness works
-live end-to-end, which it did. Natural next steps, not yet done: a bigger batch (more
-instances, ideally the full no-file Level 2/3 pool — 85 instances — or a meaningful
-subset of it); more pairs, mirroring exp5's cross-vendor design, once the pilot's
-cost/behavior profile is better understood; fixing the `delegate_to_minion` missing-
-`scope` failure mode, either via a stricter tool schema (mark `inputs` fields required
-at the JSON-schema level, not just in prose) or a repair step that fills in a sane
-default rather than looping the same correction; and, if this line of work continues,
-extending the toolset past search+compute to actually match GAIA's full task shape
-(many real GAIA instances need file/image/audio parsing, filtered out entirely here).
+n=23 (5 pilot + 18 Level 3) is still a small sample for resolve-rate or
+delegation-rate claims with real confidence, though large enough now to say Level 3
+is genuinely harder than Level 2 (50% vs. the pilot's 80%, consistent with GAIA's
+own difficulty tiering) and that the minion token-share finding from exp5 carries
+over to this task shape when delegation happens, even if delegation itself is
+sparser here than on SWE-bench. Natural next steps, not yet done: more model pairs,
+mirroring exp5's cross-vendor design; digging into the 3 `RepeatedFormatError`
+failures as a group to see if they share one root cause worth fixing at the schema
+level (mark `inputs` fields required in the JSON schema itself, not just in prose);
+and, if this line of work continues, extending the toolset past search+compute to
+match GAIA's full task shape (many real GAIA instances need file/image/audio
+parsing, filtered out entirely here).
