@@ -98,6 +98,14 @@ def main() -> None:
     parser.add_argument("--api-base", help="Ollama/OpenAI-compatible API base URL — needed for self-hosted serving, not for a hosted-API model routed by litellm's provider prefix (e.g. openrouter/...)")
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--gru-config", default="gru.yaml", help="Config filename under orchestrator/config/ for Gru's prompt (for A/B comparisons against an alternate prompt)")
+    parser.add_argument(
+        "--cost-limit",
+        type=float,
+        default=0.0,
+        help="Hard dollar cap on Gru's own session (mini-swe-agent's own enforcement, raises LimitsExceeded and "
+        "stops the session — real, not advisory). 0 (default) leaves the config's own cost_limit as-is. Does not "
+        "cap the minion, whose own delegations are typically much cheaper and already bounded by scope.",
+    )
     args = parser.parse_args()
 
     gru_model_name = args.gru_model or args.model
@@ -155,6 +163,8 @@ def main() -> None:
         gru_agent_kwargs = {
             k: v for k, v in gru_config["agent"].items() if k not in ("system_template", "instance_template")
         }
+        if args.cost_limit > 0:
+            gru_agent_kwargs["cost_limit"] = args.cost_limit
         gru_agent = DefaultAgent(
             gru_model,
             gru_env,
