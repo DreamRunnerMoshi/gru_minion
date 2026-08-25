@@ -223,9 +223,12 @@ def main() -> None:
         # working tree — pull it via git diff directly rather than losing it. Found
         # the hard way: a run where every delegation succeeded still produced a
         # 0-char patch because Gru never phrased a valid finish() call.
+        # Revised 2026-08-25 (exp5): diffs against gru_env.initial_commit, not a bare
+        # `git diff` — see GruEnvironment._finish()'s matching note for why a bare
+        # `git diff` misses anything Gru or a minion committed along the way.
         if not patch and exit_status != "Submitted":
             logger.warning(f"Session ended via {exit_status!r}, not Submitted — falling back to git diff on the shared testbed")
-            fallback_diff = docker_env.execute({"command": "git diff"})
+            fallback_diff = docker_env.execute({"command": f"git diff {gru_env.initial_commit}"})
             patch = fallback_diff.get("output", "")
             logger.info(f"Fallback git diff recovered {len(patch)} chars")
         # Whether Gru's own self-authored final_verification (necessarily blind to the

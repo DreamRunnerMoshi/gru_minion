@@ -111,6 +111,10 @@ class GruEnvironment:
         self.minion_instance_template = minion_instance_template
         self.output_dir = output_dir
         self.logger = logger or logging.getLogger("gru.environment")
+        # Captured before Gru's session runs any action, so the patch at finish() is
+        # correct even if Gru (or a minion) runs `git commit` along the way — see
+        # _finish()'s 2026-08-25 revision note for why this matters.
+        self.initial_commit = self.docker_env.execute({"command": "git rev-parse HEAD"})["output"].strip()
         # OpenRouter sticky-routing key prefix — each delegation gets its own
         # {run_id}-{delegation_id} session_id (see run_gru_session.py's 2026-08-25 note),
         # since each delegation is its own conversation with its own prefix, not a
@@ -370,10 +374,23 @@ class GruEnvironment:
 
     def _finish(self, args: dict) -> dict[str, Any]:
         """A failing final_verification must NOT end the session — that's the signal for Gru to
-        reconsider its approach and keep working, not a terminal state."""
+        reconsider its approach and keep working, not a terminal state.
+
+        Revised 2026-08-25 (exp5): diffs against `self.initial_commit`, not a bare `git diff`
+        (working tree only). Caught live: every one of gpt-solo's 5 runs had GPT-5-mini
+        `git commit` its own fix as a normal part of its workflow, which made a bare
+        `git diff` show nothing — Gru's own final_verification still passed (it re-ran real
+        checks against the actual repo state, which genuinely had the fix), so it called
+        finish() believing it had submitted a real patch, and the harness silently recorded
+        an empty one. All 5 were reported as real SWE-bench failures ("empty patch") that
+        were actually a patch-*extraction* bug, not a capability finding — and by the time
+        this was noticed, the containers were already torn down, so the real patches were
+        unrecoverable. `git diff <ref>` (vs. bare `git diff`) compares the current working
+        tree, staged and unstaged, against `<ref>` — correctly capturing committed and
+        uncommitted changes together, regardless of whether Gru or a minion committed."""
         checks = args.get("final_verification", {}).get("checks", [])
         passed, check_output = self._run_checks(checks)
-        diff_out = self.docker_env.execute({"command": "git diff"})
+        diff_out = self.docker_env.execute({"command": f"git diff {self.initial_commit}"})
         patch = diff_out["output"]
 
         self.logger.info(f"finish attempt: final_verification {'PASSED' if passed else 'FAILED'}")
