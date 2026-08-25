@@ -1,0 +1,47 @@
+# Findings: RST table writer implementation
+
+**Headline:** The RST table writer class is `RST(FixedWidth)`, located at `/testbed/astropy/io/ascii/rst.py` line 35 (module `astropy/io/ascii/rst.py`). Its `__init__` takes no parameters (`def __init__(self):`), and internally calls the parent constructor with `delimiter_pad=None, bookend=False`.
+
+## Locating command and output
+
+I ran:
+
+```
+cd /testbed/astropy/io/ascii && grep -rn "class RST" .
+```
+Output:
+```
+./rst.py:35:class RST(FixedWidth):
+```
+
+This was the only `class RST` definition in the `astropy/io/ascii` scope; no other files define an RST class.
+
+## The file: /testbed/astropy/io/ascii/rst.py
+
+The `RST` class starts at line 35 and its `__init__` is at **line 60**:
+
+```python
+class RST(FixedWidth):
+    ...
+    def __init__(self):
+        super().__init__(delimiter_pad=None, bookend=False)
+```
+
+### Current `__init__` parameters
+- `self` (implicit instance parameter) — required.
+- No named/keyword parameters — `RST()` takes zero arguments.
+- Internally it calls `super().__init__(delimiter_pad=None, bookend=False)` passing two keyword arguments to the `FixedWidth` parent constructor.
+
+So if an error mentions `RST.__init__`, the file is `/testbed/astropy/io/ascii/rst.py` and the error would be about the zero-argument signature (e.g., keyword arguments passed to `RST(...)` being rejected).
+
+## Candidate classes dismissed
+- `SimpleRSTHeader(FixedWidthHeader)` at rst.py line 16 — this is the header reader/writer helper, not the main RST writer class. It has no `__init__` (uses inherited/base behavior).
+- `SimpleRSTData(FixedWidthData)` at rst.py line 34 — this is the data/row helper class, not the RST writer. No `__init__` defined.
+- `FixedWidth` (imported from `.fixedwidth`) — the parent class of `RST`, not the RST writer itself.
+
+## Negative space / what I did not find
+- I searched only for `class RST` (narrow search). I did not scan the whole module for other `__init__` overrides or other usages of `RST.__init__`. If a broader investigation is needed (e.g., where `RST` is instantiated/used), that is outside this narrow find.
+- I confirmed there is exactly one `RST` class definition in the scope tree under `astropy/io/ascii`.
+
+## Boundaries
+- No files were modified; this was a read-only search. The change-related activity (fixing `RST.__init__` signature) would be confined to `/testbed/astropy/io/ascii/rst.py`, which is inside the allowed scope.

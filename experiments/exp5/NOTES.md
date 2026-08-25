@@ -175,16 +175,79 @@ has limits beyond what the docs describe (backend-side cache eviction under memo
 pressure or its own TTL, which routing to the same backend can't prevent), or this is
 still just n=1 variance on top of a run that also changed for other reasons.
 
+## Runs 2-3: solo Opus wasn't affordable, so a genuine but budget-safe pair — deepseek-r1
+
+User's proposal: use a genuinely expensive frontier model as Gru (Opus) so `$` savings
+from delegation become visible against a large, structural price gap rather than the
+noisy 9-30x drift between two similarly-priced DeepSeek variants — and, crucially, run
+a true solo baseline (the same model working alone) as the actual counterfactual this
+project has never measured against. Opus was ruled out on cost grounds ("don't want to
+spend $1-2"). `google/gemini-3.7-flash:batch` was floated as a cheaper alternative but
+turned out to be a genuine async batch-only endpoint (confirmed live: OpenRouter
+rejects a normal chat-completion call to it with *"This model is only available
+through the Batch API"* — true of every `:batch` suffix in the whole Gemini lineup, not
+just this one model), incompatible with this project's per-turn synchronous loop
+without a real rearchitecture.
+
+Landed on `openrouter/deepseek/deepseek-r1` as Gru ($0.70/$2.50 per M, DeepSeek's own
+flagship reasoning model, same vendor as the minion) against the existing
+`deepseek-v4-flash-0731` minion ($0.14/$0.28) — a real ~5x/8.9x gap, confirmed live to
+handle tool-calling correctly, protected by a new hard `--cost-limit` flag (real
+enforcement via mini-swe-agent's own `LimitsExceeded`, not advisory) set to $0.35 per
+Gru session as a safety net. Building the solo side required `ToolPolicy.allow_delegate`
+and `gru-solo.yaml` (see gru-loop.md's twenty-third change) — the actual comparison this
+project has never run before.
+
+**Both runs failed real evaluation, for the same reason.** Solo (`02-solo-deepseek-r1`):
+`Submitted`, unresolved — 14 turns, $0.0772, 96,260 tokens. Paired
+(`03-paired-r1-flash`): `Submitted`, unresolved — 5 Gru turns, 3 delegations, $0.1118
+total, 492,886 tokens. Checked directly: neither patch sets `self.data.start_line` —
+both found and fixed the write-path half of the bug, neither found the read-path half,
+the same specific gap that broke exp4 runs 5-7. Whether R1 worked alone or delegated
+three separate pieces of investigation/execution, it converged on the same incomplete
+diagnosis. This is a genuinely different failure signature from exp4's: it isn't about
+delegation compressing investigation (the paired run did *five times* the token volume
+of the solo run) — R1 as a model apparently doesn't independently derive the read-path
+requirement on this task, regardless of how much work surrounds the diagnosis.
+
+**But the token/cost shift is the largest seen yet, by a wide margin.** The paired run:
+
+| Run | Gru $ | Minion $ | Total $ | Minion % of $ | Minion % of tokens |
+|---|---:|---:|---:|---:|---:|
+| exp5 run 1 (deepseek-pro/flash) | $0.2262 | $0.1049 | $0.3311 | 31.7% | 61.0% |
+| **exp5 run 3 (r1/flash)** | **$0.0459** | **$0.0659** | **$0.1118** | **59.0%** | **92.1%** |
+
+92.1% of total token volume, and for the first time **the minion cost more in absolute
+dollars than Gru did** — the clearest evidence yet that the architecture can shift the
+large majority of both cost and work to the cheap model. Three delegations this run
+(t1: `findings`, a scoped search; t2 and t3: `verdict`, large agentic executions) versus
+exp5 run 1's two — R1 delegated more readily and more heavily than DeepSeek-v4-pro did
+under the same prompt, on top of doing far less work itself (5 turns vs. run 1's 23).
+
+**The honest tension this leaves:** the run that shifted the most work to the cheap
+model is also a run that failed, on the same task two prior successful architectures
+(exp4 runs 1-4, 8, 10, 12) got right. This doesn't mean heavy delegation caused the
+failure — the solo run failed identically without any delegation at all, so the actual
+cause traces to R1's own diagnosis, not to the architecture. But it does mean this
+project still doesn't have a single run that combines "most of the work shifted to the
+cheap model" with "correct" — run 12 (exp4) came closest on the correctness-plus-real-
+delegation front at 61.0% minion tokens; this run beats that on cost-shift but not on
+correctness. The two things this project cares about — cost-shift and correctness —
+still haven't been demonstrated together in the same run.
+
 ## What's still open
 
-Not yet done: a genuinely controlled before/after — the *same* prompt configuration,
-run twice, once without `session_id` (impossible to reconstruct now, since it's wired
-into every call unconditionally) and once with it, or at minimum several repeats under
-the current fixed prompt to see whether run 1's 30% anomaly rate is typical or itself
-an outlier. Until that exists, exp5's cache-cost hypothesis is downgraded from
-"diagnosed and fixed" to "diagnosed, a plausible fix implemented and verified to reach
-the API, effect on actual cache behavior still unconfirmed." Only after that's settled
-does it make sense to move on to exp4's actual closing brief for prompt work:
-content-shaped, state-conditioned delegation rules, starting from a clean single-layer
-baseline rather than continuing to stack changes, tested toward the real target metric
-— minion's share of total token spend — not just "does delegation happen."
+Not yet done: a genuinely controlled before/after for the `session_id` fix — the *same*
+prompt configuration, run twice, once without `session_id` (impossible to reconstruct
+now, since it's wired into every call unconditionally) and once with it, or at minimum
+several repeats under the current fixed prompt to see whether run 1's 30% anomaly rate
+is typical or itself an outlier. Also not yet done: repeating the r1/flash pair (or
+trying a different, less reasoning-heavy premium model) to see whether R1's specific
+diagnostic miss is a repeatable property of this model on this task, or this run's own
+variance — and whether a correct diagnosis with a large minion-token-share is
+achievable at all, or whether thoroughness (however cheaply purchased) and correctness
+are pulling against each other on this specific two-part-fix task. Until either is
+settled, exp5's central finding stays: the architecture *can* shift the substantial
+majority of token volume and dollar cost to the cheap model (confirmed twice now, at
+61% and 92%) — whether it can do that *and* stay correct, on this task, is still
+unconfirmed.
