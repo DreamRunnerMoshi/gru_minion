@@ -5,11 +5,15 @@ Mirrors minisweagent.models.utils.actions_toolcall (which hardcodes a single
 for the design rationale and prompts/README.md for the revision history.
 
 Revised 2026-08-24: the action set is no longer fixed at four. `ToolPolicy` +
-`build_tools(policy)` let a session offer any subset (delegate_to_minion and finish
-are always present; think, run_check, returns='verdict', and finish's verification
+`build_tools(policy)` let a session offer any subset (finish is always present;
+delegate_to_minion, think, run_check, returns='verdict', and finish's verification
 requirement are each independently toggleable) — orchestrator/config/gru.yaml
 currently uses the fully-permissive default (all four, no restrictions); the
 restrictive path exists for whenever a narrower session is wanted again.
+
+Revised 2026-08-25 (exp5): `allow_delegate` added — False removes delegate_to_minion
+entirely, for a genuine solo baseline (see ToolPolicy's own docstring). Before this,
+delegate_to_minion was the one action every session was guaranteed to have.
 
 Revised 2026-08-22 (see review.md R5/R6/R13/R15 and the delegation-criterion
 discussion behind them):
@@ -223,6 +227,13 @@ class ToolPolicy:
     allow_run_check: bool = True
     allow_verdict: bool = True
     require_finish_verification: bool = True
+    # Added 2026-08-25 (exp5): False builds a genuine solo baseline — no minion exists
+    # for this session at all, not just a restricted one. Every other run this project
+    # has produced measures the Gru/minion architecture's behavior; none has measured
+    # against "the same model doing the task alone," which is the actual counterfactual
+    # needed to see whether delegation saves anything. Defaults True — no existing
+    # config's behavior changes unless it explicitly sets this.
+    allow_delegate: bool = True
 
     @classmethod
     def from_dict(cls, d: dict | None) -> "ToolPolicy":
@@ -232,7 +243,7 @@ class ToolPolicy:
 def build_tools(policy: ToolPolicy | None = None) -> list[dict]:
     """The tool list actually offered to the model this session, shaped by `policy`."""
     policy = policy or ToolPolicy()
-    tools = [_delegate_tool(policy)]
+    tools = [_delegate_tool(policy)] if policy.allow_delegate else []
     if policy.allow_think:
         tools.append(THINK_TOOL)
     if policy.allow_run_check:
@@ -242,7 +253,9 @@ def build_tools(policy: ToolPolicy | None = None) -> list[dict]:
 
 
 def _tool_names(policy: ToolPolicy) -> set[str]:
-    names = {"delegate_to_minion", "finish"}
+    names = {"finish"}
+    if policy.allow_delegate:
+        names.add("delegate_to_minion")
     if policy.allow_think:
         names.add("think")
     if policy.allow_run_check:
