@@ -1,0 +1,72 @@
+# Findings on _scale_back_ascii function bug
+
+**Summary:** The `_scale_back_ascii` function in `/testbed/astropy/io/fits/fitsrec.py` has a bug where exponent separators in floating point numbers are not correctly converted from "E" to "D" for ASCII tables with D format columns. The function fails because the `replace()` method on numpy chararrays returns a new array instead of modifying in place, and the result is not assigned back to the original array.
+
+## Bug Details
+
+The bug is located in the `_scale_back_ascii` function at line:
+```python
+# Replace exponent separator in floating point numbers
+if "D" in format:
+    output_field.replace(encode_ascii("E"), encode_ascii("D"))
+```
+
+**Issue:** The `replace()` method on numpy chararrays returns a new array rather than modifying the array in place. The current code doesn"t assign the result back to `output_field`, so the replacement has no effect.
+
+## Test Script
+
+Created `test_scale_back_ascii_bug.py` that:
+1. Creates an ASCII table with a D format column containing floating point numbers that use scientific notation
+2. Writes the table to a FITS file
+3. Examines the raw FITS file content to check for "E" vs "D" exponent separators
+4. Confirms that "E" separators are present but "D" separators are missing
+
+## Test Results
+
+The test output shows:
+```
+Found "E" exponent patterns: ["1.230000000000E+20", "4.560000000000E-15", "7.890000000000E+25", "1.000000000000E-25"]
+Found "D" exponent patterns: []
+```
+
+This confirms that the exponent separators remain "E" instead of being converted to "D", demonstrating the bug.
+
+## Commands Run
+
+```bash
+# Created test script
+cat > test_scale_back_ascii_bug.py << "EOF"
+[script content]
+EOF
+
+# Ran the test
+cd /testbed && python test_scale_back_ascii_bug.py
+```
+
+**Output:**
+```
+Testing ASCII table D format exponent separator bug...
+============================================================
+Original values: [1.23e+20 4.56e-15 7.89e+25 1.0e-25]
+Expected format should have exponents like "1.23E+20"
+
+Raw data section after END card:
+[... truncated ...]
+
+Found "E" exponent patterns: ["1.230000000000E+20", "4.560000000000E-15", "7.890000000000E+25", "1.000000000000E-25"]
+Found "D" exponent patterns: []
+
+*** BUG CONFIRMED ***: Exponent separators are "E" instead of "D"
+The _scale_back_ascii function failed to convert "E" to "D"
+============================================================
+RESULT: Bug reproduced successfully!
+The _scale_back_ascii function needs to be fixed.
+```
+
+## Files Created
+
+- `/testbed/test_scale_back_ascii_bug.py`: Test script that reproduces the bug
+
+## Conclusion
+
+The test successfully reproduces the bug in the `_scale_back_ascii` function. The function fails to convert exponent separators from "E" to "D" for D format columns in ASCII tables due to improper use of the numpy chararray `replace()` method.

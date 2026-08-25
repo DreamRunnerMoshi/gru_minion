@@ -1,0 +1,894 @@
+{
+  "instance_id": "astropy__astropy-14182",
+  "gru_model": "openrouter/z-ai/glm-4.6",
+  "minion_model": "openrouter/z-ai/glm-4.5-air",
+  "start_time": 1787636159.2261615,
+  "end_time": 1787637333.5002608,
+  "wall_clock_seconds": 1174.2740993499756,
+  "exit_status": "LimitsExceeded",
+  "final_verification_passed": null,
+  "final_verification_output": "",
+  "gru_action_log": [
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "find /testbed -type f -name '*.py' | xargs grep -l 'class RST' | head -5"
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "cat /testbed/astropy/io/ascii/rst.py"
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "cat /testbed/astropy/io/ascii/fixedwidth.py"
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "head -200 /testbed/astropy/io/ascii/fixedwidth.py"
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "head -100 /testbed/astropy/io/ascii/fixedwidth.py"
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "grep -n 'class FixedWidth' /testbed/astropy/io/ascii/fixedwidth.py"
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "sed -n '306,360p' /testbed/astropy/io/ascii/fixedwidth.py"
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "grep -n 'def write' /testbed/astropy/io/ascii/basic.py | head -10"
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "sed -n '125,200p' /testbed/astropy/io/ascii/basic.py"
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "grep -n 'class Basic' /testbed/astropy/io/ascii/basic.py"
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "sed -n '44,130p' /testbed/astropy/io/ascii/basic.py"
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "grep -n 'def write' /testbed/astropy/io/ascii/core.py | head -20"
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "sed -n '659,720p' /testbed/astropy/io/ascii/core.py"
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "sed -n '1531,1600p' /testbed/astropy/io/ascii/core.py"
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "sed -n '1500,1540p' /testbed/astropy/io/ascii/core.py"
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "sed -n '950,1020p' /testbed/astropy/io/ascii/core.py"
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "sed -n '920,960p' /testbed/astropy/io/ascii/core.py"
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "sed -n '252,310p' /testbed/astropy/io/ascii/fixedwidth.py"
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "cd /testbed && python3 -c \"\nfrom astropy.table import QTable\nimport astropy.units as u\nimport sys\nimport io\ntbl = QTable({'wave': [350,950]*u.nm, 'response': [0.7, 1.2]*u.count})\nprint('Testing fixed_width with header_rows:')\ntbl.write(sys.stdout, format='ascii.fixed_width', header_rows=['name', 'unit'])\nprint()\nprint('Testing rst without header_rows:')\ntbl.write(sys.stdout, format='ascii.rst')\nprint()\nprint('Testing rst with header_rows (should fail):')\ntbl.write(sys.stdout, format='ascii.rst', header_rows=['name', 'unit'])\n\""
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "cat /testbed/astropy/io/ascii/rst.py"
+        ]
+      }
+    },
+    {
+      "kind": "think",
+      "args": {
+        "note": "Looking at the code structure:\n\n1. `RST` class inherits from `FixedWidth`\n2. `RST.__init__` currently doesn't accept `header_rows` parameter\n3. `SimpleRSTData.start_line = 3` is hardcoded - this assumes 1 header line (name) plus 1 separator line before data\n4. `SimpleRSTHeader.position_line = 0` - this is the separator line index\n\nFor RST format with `header_rows=[\"name\", \"unit\"]`, the structure should be:\n- Line 0: separator (=====)\n- Line 1: column names\n- Line 2: units\n- Line 3: separator (=====)\n- Line 4+: data\n\nSo `start_line` should be `len(header_rows) + 1` (the separator line after all header rows).\n\nThe `RST.write` method adds the top separator line by doing `lines = [lines[1]] + lines + [lines[1]]`. This means:\n- `lines[0]` is the separator line (from position_line)\n- `lines[1]` is the first header row\n- etc.\n\nI need to:\n1. Update `RST.__init__` to accept `header_rows` parameter and pass it to `FixedWidth.__init__`\n2. Update `SimpleRSTData` to handle dynamic `start_line` based on `header_rows`\n\nLet me check how `FixedWidth` handles the `start_line` when `header_rows` is set."
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "cat > /tmp/fix_rst.py << 'EOF'\nimport re\n\n# Read the original file\nwith open('/testbed/astropy/io/ascii/rst.py', 'r') as f:\n    content = f.read()\n\n# Update SimpleRSTData to have dynamic start_line\nold_simple_rst_data = '''class SimpleRSTData(FixedWidthData):\n    start_line = 3\n    end_line = -1\n    splitter_class = FixedWidthTwoLineDataSplitter'''\n\nnew_simple_rst_data = '''class SimpleRSTData(FixedWidthData):\n    start_line = None  # Will be set dynamically based on header_rows\n    end_line = -1\n    splitter_class = FixedWidthTwoLineDataSplitter'''\n\ncontent = content.replace(old_simple_rst_data, new_simple_rst_data)\n\n# Update RST.__init__ to accept header_rows\nold_rst_init = '''    def __init__(self):\n        super().__init__(delimiter_pad=None, bookend=False)'''\n\nnew_rst_init = '''    def __init__(self, header_rows=None):\n        if header_rows is None:\n            header_rows = [\"name\"]\n        super().__init__(delimiter_pad=None, bookend=False, header_rows=header_rows)\n        # For RST format, data starts after the separator line that follows header rows\n        # separator is at position_line=0, header rows are at 1, 2, ..., then another separator\n        self.data.start_line = len(header_rows) + 1'''\n\ncontent = content.replace(old_rst_init, new_rst_init)\n\n# Write the modified file\nwith open('/testbed/astropy/io/ascii/rst.py', 'w') as f:\n    f.write(content)\n\nprint(\"File updated successfully\")\nEOF\npython3 /tmp/fix_rst.py"
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "cat /testbed/astropy/io/ascii/rst.py"
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "cd /testbed && python3 -c \"\nfrom astropy.table import QTable\nimport astropy.units as u\nimport sys\nimport io\ntbl = QTable({'wave': [350,950]*u.nm, 'response': [0.7, 1.2]*u.count})\nprint('Testing rst without header_rows:')\ntbl.write(sys.stdout, format='ascii.rst')\nprint()\nprint('Testing rst with header_rows=[\\\"name\\\"]:')\ntbl.write(sys.stdout, format='ascii.rst', header_rows=['name'])\nprint()\nprint('Testing rst with header_rows=[\\\"name\\\", \\\"unit\\\"]:')\ntbl.write(sys.stdout, format='ascii.rst', header_rows=['name', 'unit'])\n\""
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "cd /testbed && python3 -c \"\nfrom astropy.io.ascii.rst import RST\nfrom astropy.table import QTable\nimport astropy.units as u\n\ntbl = QTable({'wave': [350,950]*u.nm, 'response': [0.7, 1.2]*u.count})\n\nrst = RST(header_rows=['name', 'unit'])\nlines = []\nresult = rst.write(tbl)\nprint('Result from RST.write():')\nfor i, line in enumerate(result):\n    print(f'{i}: {repr(line)}')\n\""
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "cat > /tmp/fix_rst2.py << 'EOF'\n# Read the file\nwith open('/testbed/astropy/io/ascii/rst.py', 'r') as f:\n    content = f.read()\n\n# Update the write method to handle multiple header rows\nold_write = '''    def write(self, lines):\n        lines = super().write(lines)\n        lines = [lines[1]] + lines + [lines[1]]\n        return lines'''\n\nnew_write = '''    def write(self, lines):\n        lines = super().write(lines)\n        # The separator line is at index len(header_rows)\n        # For RST format, we need this separator at both top and bottom\n        header_rows = self.header.header_rows if hasattr(self.header, 'header_rows') else [\"name\"]\n        separator_idx = len(header_rows)\n        lines = [lines[separator_idx]] + lines + [lines[separator_idx]]\n        return lines'''\n\ncontent = content.replace(old_write, new_write)\n\n# Write the modified file\nwith open('/testbed/astropy/io/ascii/rst.py', 'w') as f:\n    f.write(content)\n\nprint(\"File updated successfully\")\nEOF\npython3 /tmp/fix_rst2.py"
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "cd /testbed && python3 -c \"\nfrom astropy.table import QTable\nimport astropy.units as u\nimport sys\nimport io\ntbl = QTable({'wave': [350,950]*u.nm, 'response': [0.7, 1.2]*u.count})\nprint('Testing rst without header_rows:')\ntbl.write(sys.stdout, format='ascii.rst')\nprint()\nprint('Testing rst with header_rows=[\\\"name\\\"]:')\ntbl.write(sys.stdout, format='ascii.rst', header_rows=['name'])\nprint()\nprint('Testing rst with header_rows=[\\\"name\\\", \\\"unit\\\"]:')\ntbl.write(sys.stdout, format='ascii.rst', header_rows=['name', 'unit'])\n\""
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "cat /testbed/astropy/io/ascii/rst.py"
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "head -20 /testbed/astropy/io/ascii/rst.py"
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "wc -l /testbed/astropy/io/ascii/rst.py && cat /testbed/astropy/io/ascii/rst.py"
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "cd /testbed && git diff astropy/io/ascii/rst.py"
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "cd /testbed && python3 -c \"\nfrom astropy.io.ascii.rst import RST\nprint('RST class imported successfully')\nprint('RST.__init__ signature:', RST.__init__.__code__.co_varnames[:RST.__init__.__code__.co_argcount])\n\""
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "cd /testbed && python3 -c \"\nfrom astropy.table import QTable\nimport astropy.units as u\nimport sys\nimport io\n\ntbl = QTable({'wave': [350,950]*u.nm, 'response': [0.7, 1.2]*u.count})\n\nprint('=== Test 1: Default (no header_rows) ===')\ntbl.write(sys.stdout, format='ascii.rst')\nprint()\n\nprint('=== Test 2: header_rows=[\\\"name\\\"] ===')\ntbl.write(sys.stdout, format='ascii.rst', header_rows=['name'])\nprint()\n\nprint('=== Test 3: header_rows=[\\\"name\\\", \\\"unit\\\"] ===')\ntbl.write(sys.stdout, format='ascii.rst', header_rows=['name', 'unit'])\nprint()\n\nprint('=== Test 4: header_rows=[\\\"unit\\\"] ===')\ntbl.write(sys.stdout, format='ascii.rst', header_rows=['unit'])\nprint()\n\nprint('=== Test 5: header_rows=[\\\"name\\\", \\\"unit\\\", \\\"description\\\"] (with description) ===')\ntbl2 = QTable({'wave': [350,950]*u.nm, 'response': [0.7, 1.2]*u.count})\ntbl2['wave'].description = 'Wavelength'\ntbl2['response'].description = 'Detector response'\ntbl2.write(sys.stdout, format='ascii.rst', header_rows=['name', 'unit', 'description'])\nprint()\n\""
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "cd /testbed && python3 -c \"\nfrom astropy.table import QTable\nimport astropy.units as u\nimport sys\nimport io\nfrom astropy.io import ascii\n\n# Test reading RST format\nrst_data = '''\\n===== ========\\n wave response\\n===== ========\\n350.0      0.7\\n950.0      1.2\\n===== ========\\n'''\n\ntbl = ascii.read(rst_data, format='rst')\nprint('Read RST table:')\nprint(tbl)\nprint()\n\n# Test with multiple header rows\nrst_data2 = '''\\n===== ========\\n wave response\\n   nm       ct\\n===== ========\\n350.0      0.7\\n950.0      1.2\\n===== ========\\n'''\n\ntbl2 = ascii.read(rst_data2, format='rst')\nprint('Read RST table with units:')\nprint(tbl2)\n\""
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "cd /testbed && git stash && python3 -c \"\nfrom astropy.io import ascii\n\n# Test reading RST format\nrst_data = '''\\n===== ========\\n wave response\\n===== ========\\n350.0      0.7\\n950.0      1.2\\n===== ========\\n'''\n\ntbl = ascii.read(rst_data, format='rst')\nprint('Read RST table:')\nprint(tbl)\n\""
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "cd /testbed && git stash pop && python3 -c \"\nfrom astropy.io import ascii\n\n# Test reading RST format\nrst_data = '''\\n===== ========\\n wave response\\n===== ========\\n350.0      0.7\\n950.0      1.2\\n===== ========\\n'''\n\ntbl = ascii.read(rst_data, format='rst')\nprint('Read RST table:')\nprint(tbl)\n\""
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "cat > /testbed/astropy/io/ascii/rst.py << 'EOF'\n# Licensed under a 3-clause BSD style license\n\"\"\"\n:Author: Simon Gibbons (simongibbons@gmail.com)\n\"\"\"\n\n\nfrom .core import DefaultSplitter\nfrom .fixedwidth import (\n    FixedWidth,\n    FixedWidthData,\n    FixedWidthHeader,\n    FixedWidthTwoLineDataSplitter,\n)\n\n\nclass SimpleRSTHeader(FixedWidthHeader):\n    position_line = 0\n    start_line = 1\n    splitter_class = DefaultSplitter\n    position_char = \"=\"\n\n    def get_fixedwidth_params(self, line):\n        vals, starts, ends = super().get_fixedwidth_params(line)\n        # The right hand column can be unbounded\n        ends[-1] = None\n        return vals, starts, ends\n\n\nclass SimpleRSTData(FixedWidthData):\n    start_line = 3\n    end_line = -1\n    splitter_class = FixedWidthTwoLineDataSplitter\n\n\nclass RST(FixedWidth):\n    \"\"\"reStructuredText simple format table.\n\n    See: https://docutils.sourceforge.io/docs/ref/rst/restructuredtext.html#simple-tables\n\n    Example::\n\n        ==== ===== ======\n        Col1  Col2  Col3\n        ==== ===== ======\n          1    2.3  Hello\n          2    4.5  Worlds\n        ==== ===== ======\n\n    Currently there is no support for reading tables which utilize continuation lines,\n    or for ones which define column spans through the use of an additional\n    line of dashes in the header.\n\n    \"\"\"\n\n    _format_name = \"rst\"\n    _description = \"reStructuredText simple table\"\n    data_class = SimpleRSTData\n    header_class = SimpleRSTHeader\n\n    def __init__(self, header_rows=None):\n        if header_rows is None:\n            header_rows = [\"name\"]\n        super().__init__(delimiter_pad=None, bookend=False, header_rows=header_rows)\n        # For writing with multiple header rows, adjust the position_line\n        # so the separator appears after all header rows\n        if len(header_rows) > 1:\n            self.header.position_line = len(header_rows)\n\n    def write(self, lines):\n        lines = super().write(lines)\n        # The separator line is at index len(header_rows)\n        # For RST format, we need this separator at both top and bottom\n        header_rows = self.header.header_rows if hasattr(self.header, 'header_rows') else [\"name\"]\n        separator_idx = len(header_rows)\n        lines = [lines[separator_idx]] + lines + [lines[separator_idx]]\n        return lines\nEOF\n"
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "cd /testbed && python3 -c \"\nfrom astropy.io import ascii\n\n# Test reading RST format\nrst_data = '''\\n===== ========\\n wave response\\n===== ========\\n350.0      0.7\\n950.0      1.2\\n===== ========\\n'''\n\ntbl = ascii.read(rst_data, format='rst')\nprint('Read RST table:')\nprint(tbl)\nprint()\n\n# Test writing\nfrom astropy.table import QTable\nimport astropy.units as u\n\ntbl2 = QTable({'wave': [350,950]*u.nm, 'response': [0.7, 1.2]*u.count})\nprint('Write RST with header_rows=[\\\"name\\\", \\\"unit\\\"]:')\ntbl2.write(sys.stdout, format='ascii.rst', header_rows=['name', 'unit'])\n\""
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "cd /testbed && python3 -c \"\nfrom astropy.io import ascii\nimport sys\n\n# Test reading RST format\nrst_data = '''\\n===== ========\\n wave response\\n===== ========\\n350.0      0.7\\n950.0      1.2\\n===== ========\\n'''\n\ntbl = ascii.read(rst_data, format='rst')\nprint('Read RST table:')\nprint(tbl)\nprint()\n\n# Test writing\nfrom astropy.table import QTable\nimport astropy.units as u\n\ntbl2 = QTable({'wave': [350,950]*u.nm, 'response': [0.7, 1.2]*u.count})\nprint('Write RST with header_rows=[\\\"name\\\", \\\"unit\\\"]:')\ntbl2.write(sys.stdout, format='ascii.rst', header_rows=['name', 'unit'])\n\""
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "cd /testbed && python3 -c \"\nfrom astropy.table import QTable\nimport astropy.units as u\nimport sys\n\ntbl = QTable({'wave': [350,950]*u.nm, 'response': [0.7, 1.2]*u.count})\n\nprint('=== Test 1: Default (no header_rows) ===')\ntbl.write(sys.stdout, format='ascii.rst')\nprint()\n\nprint('=== Test 2: header_rows=[\\\"name\\\"] ===')\ntbl.write(sys.stdout, format='ascii.rst', header_rows=['name'])\nprint()\n\nprint('=== Test 3: header_rows=[\\\"name\\\", \\\"unit\\\"] ===')\ntbl.write(sys.stdout, format='ascii.rst', header_rows=['name', 'unit'])\nprint()\n\nprint('=== Test 4: header_rows=[\\\"unit\\\"] ===')\ntbl.write(sys.stdout, format='ascii.rst', header_rows=['unit'])\nprint()\n\nprint('=== Test 5: header_rows=[\\\"name\\\", \\\"unit\\\", \\\"description\\\"] ===')\ntbl2 = QTable({'wave': [350,950]*u.nm, 'response': [0.7, 1.2]*u.count})\ntbl2['wave'].description = 'Wavelength'\ntbl2['response'].description = 'Detector response'\ntbl2.write(sys.stdout, format='ascii.rst', header_rows=['name', 'unit', 'description'])\n\""
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "cd /testbed && python3 -m pytest astropy/io/ascii/tests/test_rst.py -v"
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "cd /testbed && python3 -m pytest astropy/io/ascii/tests/test_fixedwidth.py -v"
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "cd /testbed && python3 << 'EOF'\nfrom astropy.table import QTable\nimport astropy.units as u\nimport sys\nimport io\n\n# Create the table from the PR description\ntbl = QTable({'wave': [350,950]*u.nm, 'response': [0.7, 1.2]*u.count})\n\nprint(\"=== Test from PR description ===\")\nprint(\"\\n1. RST format without header_rows (should work):\")\ntbl.write(sys.stdout, format=\"ascii.rst\")\n\nprint(\"\\n2. Fixed width with header_rows (should work):\")\ntbl.write(sys.stdout, format=\"ascii.fixed_width\", header_rows=[\"name\", \"unit\"])\n\nprint(\"\\n3. RST format with header_rows (should now work):\")\ntbl.write(sys.stdout, format=\"ascii.rst\", header_rows=[\"name\", \"unit\"])\n\nprint(\"\\n=== All tests passed! ===\")\nEOF\n"
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "cd /testbed && python3 -m pytest astropy/io/ascii/tests/test_write.py -v -k 'rst or fixed_width'"
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "cd /testbed && python3 -m pytest astropy/io/ascii/tests/ -v -k 'rst' --tb=short"
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "cat /testbed/astropy/io/ascii/rst.py"
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "head -60 /testbed/astropy/io/ascii/rst.py"
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "cat > /testbed/astropy/io/ascii/rst.py << 'EOF'\n# Licensed under a 3-clause BSD style license\n\"\"\"\n:Author: Simon Gibbons (simongibbons@gmail.com)\n\"\"\"\n\n\nfrom .core import DefaultSplitter\nfrom .fixedwidth import (\n    FixedWidth,\n    FixedWidthData,\n    FixedWidthHeader,\n    FixedWidthTwoLineDataSplitter,\n)\n\n\nclass SimpleRSTHeader(FixedWidthHeader):\n    position_line = 0\n    start_line = 1\n    splitter_class = DefaultSplitter\n    position_char = \"=\"\n\n    def get_fixedwidth_params(self, line):\n        vals, starts, ends = super().get_fixedwidth_params(line)\n        # The right hand column can be unbounded\n        ends[-1] = None\n        return vals, starts, ends\n\n\nclass SimpleRSTData(FixedWidthData):\n    start_line = 3\n    end_line = -1\n    splitter_class = FixedWidthTwoLineDataSplitter\n\n\nclass RST(FixedWidth):\n    \"\"\"reStructuredText simple format table.\n\n    See: https://docutils.sourceforge.io/docs/ref/rst/restructuredtext.html#simple-tables\n\n    Example::\n\n        ==== ===== ======\n        Col1  Col2  Col3\n        ==== ===== ======\n          1    2.3  Hello\n          2    4.5  Worlds\n        ==== ===== ======\n\n    When writing, the ``header_rows`` parameter can be used to include additional\n    header information such as units or descriptions::\n\n        ==== ===== ======\n        Col1  Col2  Col3\n        m     s    km\n        ==== ===== ======\n          1    2.3  Hello\n          2    4.5  Worlds\n        ==== ===== ======\n\n    Currently there is no support for reading tables which utilize continuation lines,\n    or for ones which define column spans through the use of an additional\n    line of dashes in the header.\n\n    \"\"\"\n\n    _format_name = \"rst\"\n    _description = \"reStructuredText simple table\"\n    data_class = SimpleRSTData\n    header_class = SimpleRSTHeader\n\n    def __init__(self, header_rows=None):\n        if header_rows is None:\n            header_rows = [\"name\"]\n        super().__init__(delimiter_pad=None, bookend=False, header_rows=header_rows)\n        # For writing with multiple header rows, adjust the position_line\n        # so the separator appears after all header rows\n        if len(header_rows) > 1:\n            self.header.position_line = len(header_rows)\n\n    def write(self, lines):\n        lines = super().write(lines)\n        # The separator line is at index len(header_rows)\n        # For RST format, we need this separator at both top and bottom\n        header_rows = self.header.header_rows if hasattr(self.header, 'header_rows') else [\"name\"]\n        separator_idx = len(header_rows)\n        lines = [lines[separator_idx]] + lines + [lines[separator_idx]]\n        return lines\nEOF\n"
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "cd /testbed && python3 -m pytest astropy/io/ascii/tests/test_rst.py -v"
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "cd /testbed && python3 << 'EOF'\nfrom astropy.table import QTable\nimport astropy.units as u\nimport sys\nimport io\n\n# Create the table from the PR description\ntbl = QTable({'wave': [350,950]*u.nm, 'response': [0.7, 1.2]*u.count})\n\nprint(\"=== Final verification test ===\")\nprint(\"\\n1. RST format without header_rows:\")\ntbl.write(sys.stdout, format=\"ascii.rst\")\n\nprint(\"\\n2. RST format with header_rows=['name']:\")\ntbl.write(sys.stdout, format=\"ascii.rst\", header_rows=['name'])\n\nprint(\"\\n3. RST format with header_rows=['name', 'unit']:\")\ntbl.write(sys.stdout, format=\"ascii.rst\", header_rows=['name', 'unit'])\n\nprint(\"\\n4. RST format with header_rows=['unit']:\")\ntbl.write(sys.stdout, format=\"ascii.rst\", header_rows=['unit'])\n\nprint(\"\\n5. RST format with header_rows=['name', 'unit', 'description']:\")\ntbl2 = QTable({'wave': [350,950]*u.nm, 'response': [0.7, 1.2]*u.count})\ntbl2['wave'].description = 'Wavelength'\ntbl2['response'].description = 'Detector response'\ntbl2.write(sys.stdout, format=\"ascii.rst\", header_rows=['name', 'unit', 'description'])\n\nprint(\"\\n=== All tests passed! ===\")\nEOF\n"
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "cd /testbed && python3 << 'EOF'\nfrom astropy.io import ascii\n\n# Test reading RST format (standard format)\nrst_data = '''\\n===== ========\\n wave response\\n===== ========\\n350.0      0.7\\n950.0      1.2\\n===== ========\\n'''\n\ntbl = ascii.read(rst_data, format='rst')\nprint('Read RST table (standard format):')\nprint(tbl)\nprint()\n\n# Test with a table that has more columns\nrst_data2 = '''\\n==== ==== ====\\n a   b   c\\n==== ==== ====\\n 1   2   3\\n 4   5   6\\n==== ==== ====\\n'''\n\ntbl2 = ascii.read(rst_data2, format='rst')\nprint('Read RST table (3 columns):')\nprint(tbl2)\nprint()\n\nprint('=== Reading tests passed! ===')\nEOF\n"
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "cd /testbed && python3 -m pytest astropy/io/ascii/tests/test_fixedwidth.py astropy/io/ascii/tests/test_rst.py -v --tb=short"
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "cd /testbed && python3 -m pytest astropy/io/ascii/tests/ -k 'header_rows' -v --tb=short"
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "cd /testbed && python3 << 'EOF'\n\"\"\"Test script to verify the RST header_rows fix.\"\"\"\nfrom astropy.table import QTable\nimport astropy.units as u\nimport sys\nfrom astropy.io import ascii\n\ndef test_rst_write_with_header_rows():\n    \"\"\"Test that RST format accepts header_rows parameter.\"\"\"\n    tbl = QTable({'wave': [350,950]*u.nm, 'response': [0.7, 1.2]*u.count})\n    \n    # This should not raise an error\n    output = tbl.write(format='ascii.rst', header_rows=['name', 'unit'])\n    \n    # Check that the output contains both names and units\n    assert 'wave' in output\n    assert 'response' in output\n    assert 'nm' in output\n    assert 'ct' in output\n    print(\"\u2713 RST write with header_rows=['name', 'unit'] works\")\n\ndef test_rst_write_default():\n    \"\"\"Test that RST format still works with default header_rows.\"\"\"\n    tbl = QTable({'wave': [350,950]*u.nm, 'response': [0.7, 1.2]*u.count})\n    \n    output = tbl.write(format='ascii.rst')\n    \n    # Check that the output contains column names\n    assert 'wave' in output\n    assert 'response' in output\n    print(\"\u2713 RST write with default header_rows works\")\n\ndef test_rst_read():\n    \"\"\"Test that RST reading still works.\"\"\"\n    rst_data = '''\\n===== ========\\n wave response\\n===== ========\\n350.0      0.7\\n950.0      1.2\\n===== ========\\n'''\n    \n    tbl = ascii.read(rst_data, format='rst')\n    \n    # Check that the table was read correctly\n    assert len(tbl) == 2\n    assert 'wave' in tbl.colnames\n    assert 'response' in tbl.colnames\n    print(\"\u2713 RST read works\")\n\ndef test_rst_write_with_description():\n    \"\"\"Test RST write with description in header_rows.\"\"\"\n    tbl = QTable({'wave': [350,950]*u.nm, 'response': [0.7, 1.2]*u.count})\n    tbl['wave'].description = 'Wavelength'\n    tbl['response'].description = 'Detector response'\n    \n    output = tbl.write(format='ascii.rst', header_rows=['name', 'unit', 'description'])\n    \n    assert 'wave' in output\n    assert 'response' in output\n    assert 'nm' in output\n    assert 'ct' in output\n    print(\"\u2713 RST write with description in header_rows works\")\n\ndef test_rst_write_unit_only():\n    \"\"\"Test RST write with only units in header_rows.\"\"\"\n    tbl = QTable({'wave': [350,950]*u.nm, 'response': [0.7, 1.2]*u.count})\n    \n    output = tbl.write(format='ascii.rst', header_rows=['unit'])\n    \n    assert 'nm' in output\n    assert 'ct' in output\n    print(\"\u2713 RST write with unit-only header_rows works\")\n\nif __name__ == '__main__':\n    test_rst_write_with_header_rows()\n    test_rst_write_default()\n    test_rst_read()\n    test_rst_write_with_description()\n    test_rst_write_unit_only()\n    print(\"\\n=== All tests passed! ===\")\nEOF\n"
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "cd /testbed && python3 << 'EOF'\n\"\"\"Test script to verify the RST header_rows fix.\"\"\"\nfrom astropy.table import QTable\nimport astropy.units as u\nimport sys\nimport io\nfrom astropy.io import ascii\n\ndef test_rst_write_with_header_rows():\n    \"\"\"Test that RST format accepts header_rows parameter.\"\"\"\n    tbl = QTable({'wave': [350,950]*u.nm, 'response': [0.7, 1.2]*u.count})\n    \n    # This should not raise an error\n    output = io.StringIO()\n    tbl.write(output, format='ascii.rst', header_rows=['name', 'unit'])\n    result = output.getvalue()\n    \n    # Check that the output contains both names and units\n    assert 'wave' in result\n    assert 'response' in result\n    assert 'nm' in result\n    assert 'ct' in result\n    print(\"\u2713 RST write with header_rows=['name', 'unit'] works\")\n\ndef test_rst_write_default():\n    \"\"\"Test that RST format still works with default header_rows.\"\"\"\n    tbl = QTable({'wave': [350,950]*u.nm, 'response': [0.7, 1.2]*u.count})\n    \n    output = io.StringIO()\n    tbl.write(output, format='ascii.rst')\n    result = output.getvalue()\n    \n    # Check that the output contains column names\n    assert 'wave' in result\n    assert 'response' in result\n    print(\"\u2713 RST write with default header_rows works\")\n\ndef test_rst_read():\n    \"\"\"Test that RST reading still works.\"\"\"\n    rst_data = '''\\n===== ========\\n wave response\\n===== ========\\n350.0      0.7\\n950.0      1.2\\n===== ========\\n'''\n    \n    tbl = ascii.read(rst_data, format='rst')\n    \n    # Check that the table was read correctly\n    assert len(tbl) == 2\n    assert 'wave' in tbl.colnames\n    assert 'response' in tbl.colnames\n    print(\"\u2713 RST read works\")\n\ndef test_rst_write_with_description():\n    \"\"\"Test RST write with description in header_rows.\"\"\"\n    tbl = QTable({'wave': [350,950]*u.nm, 'response': [0.7, 1.2]*u.count})\n    tbl['wave'].description = 'Wavelength'\n    tbl['response'].description = 'Detector response'\n    \n    output = io.StringIO()\n    tbl.write(output, format='ascii.rst', header_rows=['name', 'unit', 'description'])\n    result = output.getvalue()\n    \n    assert 'wave' in result\n    assert 'response' in result\n    assert 'nm' in result\n    assert 'ct' in result\n    print(\"\u2713 RST write with description in header_rows works\")\n\ndef test_rst_write_unit_only():\n    \"\"\"Test RST write with only units in header_rows.\"\"\"\n    tbl = QTable({'wave': [350,950]*u.nm, 'response': [0.7, 1.2]*u.count})\n    \n    output = io.StringIO()\n    tbl.write(output, format='ascii.rst', header_rows=['unit'])\n    result = output.getvalue()\n    \n    assert 'nm' in result\n    assert 'ct' in result\n    print(\"\u2713 RST write with unit-only header_rows works\")\n\nif __name__ == '__main__':\n    test_rst_write_with_header_rows()\n    test_rst_write_default()\n    test_rst_read()\n    test_rst_write_with_description()\n    test_rst_write_unit_only()\n    print(\"\\n=== All tests passed! ===\")\nEOF\n"
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "cat /testbed/astropy/io/ascii/rst.py"
+        ]
+      }
+    }
+  ],
+  "gru": {
+    "api_calls": 57,
+    "cost": 0.3031103899999999,
+    "prompt_tokens": 963493,
+    "completion_tokens": 80405,
+    "total_tokens": 1043898,
+    "cache": {
+      "n_calls": 57,
+      "total_prompt_tokens": 963493,
+      "reported_cached_tokens": 917504,
+      "reported_cache_hit_pct": 95.23,
+      "estimated_reused_tokens": 936895,
+      "estimated_cache_hit_pct": 97.24,
+      "per_call": [
+        {
+          "prompt_tokens": 1452,
+          "completion_tokens": 292,
+          "reported_cached_tokens": 768,
+          "estimated_reused_tokens": 0,
+          "estimated_new_tokens": 1452
+        },
+        {
+          "prompt_tokens": 1823,
+          "completion_tokens": 59,
+          "reported_cached_tokens": 1664,
+          "estimated_reused_tokens": 1744,
+          "estimated_new_tokens": 79
+        },
+        {
+          "prompt_tokens": 2346,
+          "completion_tokens": 45,
+          "reported_cached_tokens": 1792,
+          "estimated_reused_tokens": 1882,
+          "estimated_new_tokens": 464
+        },
+        {
+          "prompt_tokens": 2895,
+          "completion_tokens": 66,
+          "reported_cached_tokens": 2304,
+          "estimated_reused_tokens": 2391,
+          "estimated_new_tokens": 504
+        },
+        {
+          "prompt_tokens": 3423,
+          "completion_tokens": 48,
+          "reported_cached_tokens": 2944,
+          "estimated_reused_tokens": 2961,
+          "estimated_new_tokens": 462
+        },
+        {
+          "prompt_tokens": 3963,
+          "completion_tokens": 70,
+          "reported_cached_tokens": 3456,
+          "estimated_reused_tokens": 3471,
+          "estimated_new_tokens": 492
+        },
+        {
+          "prompt_tokens": 4234,
+          "completion_tokens": 47,
+          "reported_cached_tokens": 3968,
+          "estimated_reused_tokens": 4033,
+          "estimated_new_tokens": 201
+        },
+        {
+          "prompt_tokens": 4707,
+          "completion_tokens": 153,
+          "reported_cached_tokens": 4224,
+          "estimated_reused_tokens": 4281,
+          "estimated_new_tokens": 426
+        },
+        {
+          "prompt_tokens": 4953,
+          "completion_tokens": 47,
+          "reported_cached_tokens": 4736,
+          "estimated_reused_tokens": 4860,
+          "estimated_new_tokens": 93
+        },
+        {
+          "prompt_tokens": 5517,
+          "completion_tokens": 50,
+          "reported_cached_tokens": 4992,
+          "estimated_reused_tokens": 5000,
+          "estimated_new_tokens": 517
+        },
+        {
+          "prompt_tokens": 5648,
+          "completion_tokens": 49,
+          "reported_cached_tokens": 5504,
+          "estimated_reused_tokens": 5567,
+          "estimated_new_tokens": 81
+        },
+        {
+          "prompt_tokens": 6215,
+          "completion_tokens": 66,
+          "reported_cached_tokens": 5632,
+          "estimated_reused_tokens": 5697,
+          "estimated_new_tokens": 518
+        },
+        {
+          "prompt_tokens": 6420,
+          "completion_tokens": 53,
+          "reported_cached_tokens": 6272,
+          "estimated_reused_tokens": 6281,
+          "estimated_new_tokens": 139
+        },
+        {
+          "prompt_tokens": 6926,
+          "completion_tokens": 50,
+          "reported_cached_tokens": 6400,
+          "estimated_reused_tokens": 6473,
+          "estimated_new_tokens": 453
+        },
+        {
+          "prompt_tokens": 7472,
+          "completion_tokens": 46,
+          "reported_cached_tokens": 6912,
+          "estimated_reused_tokens": 6976,
+          "estimated_new_tokens": 496
+        },
+        {
+          "prompt_tokens": 7814,
+          "completion_tokens": 50,
+          "reported_cached_tokens": 7424,
+          "estimated_reused_tokens": 7518,
+          "estimated_new_tokens": 296
+        },
+        {
+          "prompt_tokens": 8369,
+          "completion_tokens": 49,
+          "reported_cached_tokens": 7808,
+          "estimated_reused_tokens": 7864,
+          "estimated_new_tokens": 505
+        },
+        {
+          "prompt_tokens": 8822,
+          "completion_tokens": 71,
+          "reported_cached_tokens": 8320,
+          "estimated_reused_tokens": 8418,
+          "estimated_new_tokens": 404
+        },
+        {
+          "prompt_tokens": 9378,
+          "completion_tokens": 304,
+          "reported_cached_tokens": 8832,
+          "estimated_reused_tokens": 8893,
+          "estimated_new_tokens": 485
+        },
+        {
+          "prompt_tokens": 10204,
+          "completion_tokens": 196,
+          "reported_cached_tokens": 9600,
+          "estimated_reused_tokens": 9682,
+          "estimated_new_tokens": 522
+        },
+        {
+          "prompt_tokens": 10863,
+          "completion_tokens": 602,
+          "reported_cached_tokens": 10368,
+          "estimated_reused_tokens": 10400,
+          "estimated_new_tokens": 463
+        },
+        {
+          "prompt_tokens": 11508,
+          "completion_tokens": 852,
+          "reported_cached_tokens": 11392,
+          "estimated_reused_tokens": 11465,
+          "estimated_new_tokens": 43
+        },
+        {
+          "prompt_tokens": 12784,
+          "completion_tokens": 40,
+          "reported_cached_tokens": 12288,
+          "estimated_reused_tokens": 12360,
+          "estimated_new_tokens": 424
+        },
+        {
+          "prompt_tokens": 13366,
+          "completion_tokens": 202,
+          "reported_cached_tokens": 12800,
+          "estimated_reused_tokens": 12824,
+          "estimated_new_tokens": 542
+        },
+        {
+          "prompt_tokens": 13886,
+          "completion_tokens": 736,
+          "reported_cached_tokens": 13440,
+          "estimated_reused_tokens": 13568,
+          "estimated_new_tokens": 318
+        },
+        {
+          "prompt_tokens": 14848,
+          "completion_tokens": 917,
+          "reported_cached_tokens": 14592,
+          "estimated_reused_tokens": 14622,
+          "estimated_new_tokens": 226
+        },
+        {
+          "prompt_tokens": 16064,
+          "completion_tokens": 196,
+          "reported_cached_tokens": 15744,
+          "estimated_reused_tokens": 15765,
+          "estimated_new_tokens": 299
+        },
+        {
+          "prompt_tokens": 16573,
+          "completion_tokens": 39,
+          "reported_cached_tokens": 16256,
+          "estimated_reused_tokens": 16260,
+          "estimated_new_tokens": 313
+        },
+        {
+          "prompt_tokens": 17139,
+          "completion_tokens": 44,
+          "reported_cached_tokens": 16512,
+          "estimated_reused_tokens": 16612,
+          "estimated_new_tokens": 527
+        },
+        {
+          "prompt_tokens": 17341,
+          "completion_tokens": 67,
+          "reported_cached_tokens": 17152,
+          "estimated_reused_tokens": 17183,
+          "estimated_new_tokens": 158
+        },
+        {
+          "prompt_tokens": 17951,
+          "completion_tokens": 61,
+          "reported_cached_tokens": 17280,
+          "estimated_reused_tokens": 17408,
+          "estimated_new_tokens": 543
+        },
+        {
+          "prompt_tokens": 18491,
+          "completion_tokens": 116,
+          "reported_cached_tokens": 17920,
+          "estimated_reused_tokens": 18012,
+          "estimated_new_tokens": 479
+        },
+        {
+          "prompt_tokens": 18727,
+          "completion_tokens": 396,
+          "reported_cached_tokens": 18560,
+          "estimated_reused_tokens": 18607,
+          "estimated_new_tokens": 120
+        },
+        {
+          "prompt_tokens": 19709,
+          "completion_tokens": 267,
+          "reported_cached_tokens": 19072,
+          "estimated_reused_tokens": 19123,
+          "estimated_new_tokens": 586
+        },
+        {
+          "prompt_tokens": 20284,
+          "completion_tokens": 221,
+          "reported_cached_tokens": 19968,
+          "estimated_reused_tokens": 19976,
+          "estimated_new_tokens": 308
+        },
+        {
+          "prompt_tokens": 20690,
+          "completion_tokens": 146,
+          "reported_cached_tokens": 20480,
+          "estimated_reused_tokens": 20505,
+          "estimated_new_tokens": 185
+        },
+        {
+          "prompt_tokens": 21114,
+          "completion_tokens": 65536,
+          "reported_cached_tokens": 20736,
+          "estimated_reused_tokens": 20836,
+          "estimated_new_tokens": 278
+        },
+        {
+          "prompt_tokens": 18068,
+          "completion_tokens": 3169,
+          "reported_cached_tokens": 1408,
+          "estimated_reused_tokens": 18068,
+          "estimated_new_tokens": 0
+        },
+        {
+          "prompt_tokens": 21836,
+          "completion_tokens": 239,
+          "reported_cached_tokens": 21120,
+          "estimated_reused_tokens": 21237,
+          "estimated_new_tokens": 599
+        },
+        {
+          "prompt_tokens": 22369,
+          "completion_tokens": 242,
+          "reported_cached_tokens": 22016,
+          "estimated_reused_tokens": 22075,
+          "estimated_new_tokens": 294
+        },
+        {
+          "prompt_tokens": 22912,
+          "completion_tokens": 382,
+          "reported_cached_tokens": 22528,
+          "estimated_reused_tokens": 22611,
+          "estimated_new_tokens": 301
+        },
+        {
+          "prompt_tokens": 23867,
+          "completion_tokens": 61,
+          "reported_cached_tokens": 23168,
+          "estimated_reused_tokens": 23294,
+          "estimated_new_tokens": 573
+        },
+        {
+          "prompt_tokens": 24753,
+          "completion_tokens": 60,
+          "reported_cached_tokens": 23808,
+          "estimated_reused_tokens": 23928,
+          "estimated_new_tokens": 825
+        },
+        {
+          "prompt_tokens": 25625,
+          "completion_tokens": 257,
+          "reported_cached_tokens": 24704,
+          "estimated_reused_tokens": 24813,
+          "estimated_new_tokens": 812
+        },
+        {
+          "prompt_tokens": 26270,
+          "completion_tokens": 66,
+          "reported_cached_tokens": 25856,
+          "estimated_reused_tokens": 25882,
+          "estimated_new_tokens": 388
+        },
+        {
+          "prompt_tokens": 27153,
+          "completion_tokens": 66,
+          "reported_cached_tokens": 26240,
+          "estimated_reused_tokens": 26336,
+          "estimated_new_tokens": 817
+        },
+        {
+          "prompt_tokens": 28054,
+          "completion_tokens": 74,
+          "reported_cached_tokens": 27136,
+          "estimated_reused_tokens": 27219,
+          "estimated_new_tokens": 835
+        },
+        {
+          "prompt_tokens": 28651,
+          "completion_tokens": 40,
+          "reported_cached_tokens": 28032,
+          "estimated_reused_tokens": 28128,
+          "estimated_new_tokens": 523
+        },
+        {
+          "prompt_tokens": 29113,
+          "completion_tokens": 755,
+          "reported_cached_tokens": 28672,
+          "estimated_reused_tokens": 28691,
+          "estimated_new_tokens": 422
+        },
+        {
+          "prompt_tokens": 30547,
+          "completion_tokens": 53,
+          "reported_cached_tokens": 29824,
+          "estimated_reused_tokens": 29868,
+          "estimated_new_tokens": 679
+        },
+        {
+          "prompt_tokens": 31424,
+          "completion_tokens": 398,
+          "reported_cached_tokens": 30592,
+          "estimated_reused_tokens": 30600,
+          "estimated_new_tokens": 824
+        },
+        {
+          "prompt_tokens": 32422,
+          "completion_tokens": 261,
+          "reported_cached_tokens": 31744,
+          "estimated_reused_tokens": 31822,
+          "estimated_new_tokens": 600
+        },
+        {
+          "prompt_tokens": 32995,
+          "completion_tokens": 74,
+          "reported_cached_tokens": 32640,
+          "estimated_reused_tokens": 32683,
+          "estimated_new_tokens": 312
+        },
+        {
+          "prompt_tokens": 33897,
+          "completion_tokens": 61,
+          "reported_cached_tokens": 33024,
+          "estimated_reused_tokens": 33069,
+          "estimated_new_tokens": 828
+        },
+        {
+          "prompt_tokens": 34728,
+          "completion_tokens": 891,
+          "reported_cached_tokens": 33920,
+          "estimated_reused_tokens": 33958,
+          "estimated_new_tokens": 770
+        },
+        {
+          "prompt_tokens": 36516,
+          "completion_tokens": 960,
+          "reported_cached_tokens": 35584,
+          "estimated_reused_tokens": 35619,
+          "estimated_new_tokens": 897
+        },
+        {
+          "prompt_tokens": 38374,
+          "completion_tokens": 47,
+          "reported_cached_tokens": 37376,
+          "estimated_reused_tokens": 37476,
+          "estimated_new_tokens": 898
+        }
+      ]
+    }
+  },
+  "minions": [],
+  "minions_total": {
+    "count": 0,
+    "api_calls": 0,
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "total_tokens": 0
+  },
+  "cache_totals": {
+    "n_sessions": 1,
+    "n_calls": 57,
+    "total_prompt_tokens": 963493,
+    "reported_cached_tokens": 917504,
+    "reported_over_prompt_tokens": 963493,
+    "reported_sessions": 1,
+    "reported_cache_hit_pct": 95.23,
+    "estimated_reused_tokens": 936895,
+    "estimated_cache_hit_pct": 97.24
+  }
+}

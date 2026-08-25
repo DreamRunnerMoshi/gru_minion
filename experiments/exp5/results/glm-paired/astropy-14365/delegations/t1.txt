@@ -1,0 +1,76 @@
+# QDP Reader Code Analysis in Astropy
+
+## Summary
+The QDP reader code in astropy is located in `/testbed/astropy/io/ascii/qdp.py` and implements the Quick and Dandy Plotter format. The main command parsing logic is handled by the `_line_type()` function which uses regex patterns to identify READ SERR/TERR commands, data lines, and comment lines.
+
+## File Locations and Structure
+
+### Main QDP Reader File
+**Path:** `/testbed/astropy/io/ascii/qdp.py`
+**Size:** 642 lines
+
+### Related Files
+- **Test file:** `/testbed/astropy/io/ascii/tests/test_qdp.py`
+- **Registration:** `/testbed/astropy/io/ascii/__init__.py` (imports QDP class)
+
+## Command Parsing Implementation
+
+### Primary Command Parsing Function
+**Function:** `_line_type(line, delimiter=None)` (lines 20-87)
+- **Location:** Lines 20-87
+- **Purpose:** Interprets individual QDP file lines and categorizes them as "comment", "command", or "data"
+- **Key regex pattern:** `_command_re = r"READ [TS]ERR(\s+[0-9]+)+"`
+- **Returns:** Line type string or raises ValueError for unrecognized lines
+
+### Command Processing Logic
+**Function:** `_get_tables_from_qdp_file()` (lines 237-384)
+- **Location:** Lines 237-384
+- **Command handling section:** Lines 267-299
+- **Process:** 
+  1. Iterates through lines and identifies command lines (datatype == "command")
+  2. Parses READ SERR/TERR commands using `command[1].lower()` and `command[2:]`
+  3. Stores error specifications in `err_specs` dictionary
+  4. Calls `_interpret_err_lines()` to generate column names
+
+### Command Interpretation Function
+**Function:** `_interpret_err_lines(err_specs, ncols, names=None)` (lines 149-344)
+- **Location:** Lines 149-344
+- **Purpose:** Converts error specifications from READ commands into column names
+- **Input:** Dictionary with 'serr' and 'terr' keys containing column numbers
+- **Output:** List of column names including error columns (e.g., 'col1_perr', 'col1_nerr', 'col2_err')
+
+## QDP Class Structure
+
+### Main Reader Class
+**Class:** `QDP` (lines 523-640)
+- **Location:** Lines 523-640
+- **Inherits from:** `basic.Basic`
+- **Key methods:**
+  - `read()` (lines 630-639): Calls `_read_table_qdp()`
+  - `write()` (lines 639+): Handles table writing
+
+### Supporting Classes
+- **`QDPSplitter`** (lines 494-500): Handles space-based splitting
+- **`QDPHeader`** (lines 502-509): Comment-based header handling
+- **`QDPData`** (lines 512-521): Data processing with "NO" as masked values
+
+## Command Examples from Tests
+**Test file examples** (from `/testbed/astropy/io/ascii/tests/test_qdp.py`):
+- `READ TERR 1` - Two-sided error bars starting after column 1
+- `READ SERR 2` - Symmetric error bars starting after column 2
+- `READ TERR 1` + `READ SERR 3` - Combined error specifications
+
+## Command Processing Workflow
+1. **Line Type Detection:** `_line_type()` identifies command lines using regex
+2. **Command Collection:** Commands are accumulated until data is encountered
+3. **Error Spec Parsing:** READ commands are parsed into column numbers
+4. **Column Generation:** Error column names are created based on specifications
+5. **Table Creation:** Data is read with appropriate column structure
+
+## Search Results and Dismissed Candidates
+- **Searched for:** All Python files containing "qdp"
+- **Found:** 3 files (qdp.py, __init__.py, test_write.py)
+- **Dismissed:** 
+  - `/testbed/astropy/io/ascii/tests/test_write.py` - Only contains one comment about QDP format limitation
+  - Other ascii format files (basic.py, core.py, etc.) - No QDP-specific code found
+- **Not found:** QDP code in core.py, connect.py, or ui.py modules

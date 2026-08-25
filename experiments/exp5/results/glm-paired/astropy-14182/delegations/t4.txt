@@ -1,0 +1,96 @@
+# Findings: RST Format Test File Analysis
+
+## Summary
+
+The RST format test file (`/testbed/astropy/io/ascii/tests/test_rst.py`) contains comprehensive tests for the reStructuredText simple table format, but **no existing tests for header_rows functionality**. The RST format inherits from FixedWidth but does not currently support the header_rows parameter that is available in other fixed-width formats like `fixed_width` and `fixed_width_two_line`.
+
+## RST Test File Analysis
+
+**File Path:** `/testbed/astropy/io/ascii/tests/test_rst.py`
+
+### Existing Test Coverage:
+The test file contains 8 test functions covering normal RST table reading and writing:
+
+1. `test_read_normal()` - Basic RST table reading
+2. `test_read_normal_names()` - RST table with provided column names  
+3. `test_read_normal_names_include()` - RST table with column inclusion
+4. `test_read_normal_exclude()` - RST table with column exclusion
+5. `test_read_unbounded_right_column()` - RST with unbounded right column
+6. `test_read_unbounded_right_column_header()` - RST with unbounded header column
+7. `test_read_right_indented_table()` - RST with right indentation
+8. `test_trailing_spaces_in_row_definition()` - RST with trailing spaces
+9. `test_write_normal()` - RST table writing
+
+### Key Test Cases Related to Headers:
+
+The tests show that RST tables follow this structure:
+```
+# comment (with blank line above)
+======= =========     # Position line with "=" characters
+   Col1      Col2     # Header line (start_line = 1)
+======= =========     # Position line with "=" characters
+   1.2    "hello"     # Data starts at line 3
+   2.4  's worlds
+======= =========     # Position line with "=" characters
+```
+
+## header_rows Implementation Analysis
+
+**Current Status:** RST format does NOT support header_rows parameter
+
+### Evidence from Code Investigation:
+
+1. **No header_rows references in RST implementation:**
+   - `/testbed/astropy/io/ascii/rst.py` contains no mentions of `header_rows`
+   - RST inherits from `FixedWidth` but doesn't override the header_rows functionality
+
+2. **header_rows is only supported in FixedWidth variants:**
+   - `/testbed/astropy/io/ascii/fixedwidth.py` implements header_rows functionality
+   - Only `FixedWidth`, `FixedWidthTwoLine`, and related classes support it
+   - `FixedWidthNoHeader` explicitly rejects header_rows with a TypeError
+
+3. **Existing header_rows tests are in fixedwidth tests:**
+   - `/testbed/astropy/io/ascii/tests/test_fixedwidth.py` contains:
+     - `test_fixed_width_header_rows()` - Tests 5-row header (dtype, name, unit, format, description)
+     - `test_fixed_width_two_line_header_rows()` - Tests 5-row header with different ordering
+     - `test_fixed_width_no_header_header_rows()` - Tests header_rows rejection
+
+### header_rows Functionality in FixedWidth:
+
+The header_rows parameter allows multi-line headers where each line has a specific semantic meaning:
+- `"name"` - Column names (always required)
+- `"dtype"` - Data types  
+- `"unit"` - Units
+- `"format"` - Output formats
+- `"description"` - Column descriptions
+
+Example usage:
+```python
+header_rows = ["dtype", "name", "unit", "format", "description"]
+dat = ascii.read(tbl, format="fixed_width", delimiter="|", header_rows=header_rows)
+```
+
+## Missing Functionality for RST
+
+The RST format currently lacks header_rows support, which means:
+- Cannot read RST tables with multi-line headers containing metadata
+- Cannot write RST tables with rich header information beyond column names
+- Cannot leverage existing header_rows functionality that works for other fixed-width formats
+
+## Search Results Summary
+
+**Searched locations:**
+- `/testbed/astbed/astropy/io/ascii/tests/test_rst.py` - Found comprehensive tests but no header_rows tests
+- `/testbed/astropy/io/ascii/rst.py` - No header_rows references found
+- `/testbed/astropy/io/ascii/fixedwidth.py` - Full header_rows implementation found
+- `/testbed/astropy/io/ascii/tests/test_fixedwidth.py` - Existing header_rows tests found
+
+**Candidates considered and dismissed:**
+- RST test file candidates: None - no existing header_rows tests found
+- RST implementation candidates: None - header_rows functionality not implemented
+- Fixed-width format candidates: `FixedWidth`, `FixedWidthTwoLine` - these support header_rows but are not RST format
+
+**Not found:**
+- Any RST tests using header_rows parameter
+- Any RST code handling multi-line headers
+- Documentation of header_rows support in RST format

@@ -1,0 +1,189 @@
+# Findings: RST Writer header_rows Implementation Analysis
+
+## Summary
+
+The RST writer class currently lacks the `header_rows` parameter that is fully implemented in the fixed_width writer. The fixed_width writer supports multiple header rows for different types of metadata (dtype, name, unit, format, description), while the RST writer is hardcoded to use a specific 3-line format with fixed roles. To add header_rows support to RST, the RST classes need to be modified to accept and process the header_rows parameter similar to how fixed_width does it.
+
+## File Locations
+
+- **RST writer class**: `/testbed/astropy/io/ascii/rst.py`
+- **Fixed_width writer class**: `/testbed/astropy/io/ascii/fixedwidth.py`
+
+## Fixed_width header_rows Implementation
+
+The fixed_width writer implements header_rows support in several key locations:
+
+### 1. FixedWidth Class Constructor (lines 345-357)
+```python
+def __init__(
+    self,
+    col_starts=None,
+    col_ends=None,
+    delimiter_pad=" ",
+    bookend=True,
+    header_rows=None,
+):
+    if header_rows is None:
+        header_rows = ["name"]
+    super().__init__()
+    self.data.splitter.delimiter_pad = delimiter_pad
+    self.data.splitter.bookend = bookend
+    self.header.col_starts = col_starts
+    self.header.col_ends = col_ends
+    self.header.header_rows = header_rows
+    self.data.header_rows = header_rows
+    if self.data.start_line is None:
+        self.data.start_line = len(header_rows)
+```
+
+### 2. FixedWidthHeader.get_cols() Method (lines 97, 163, 168)
+```python
+# Line 97: Get header_rows attribute
+header_rows = getattr(self, "header_rows", ["name"])
+
+# Line 163: Find which row contains column names
+line = self.get_line(lines, start_line + header_rows.index("name"))
+
+# Lines 168-175: Process all header rows
+for ii, attr in enumerate(header_rows):
+    if attr != "name":
+        line = self.get_line(lines, start_line + ii)
+        vals = self.get_fixedwidth_params(line)[0]
+        for col, val in zip(self.cols, vals):
+            if val:
+                setattr(col, attr, val)
+```
+
+### 3. FixedWidthData.write() Method (lines 262-273)
+```python
+# Line 262-263: Get header_rows for writing
+default_header_rows = [] if self.header.start_line is None else ["name"]
+header_rows = getattr(self, "header_rows", default_header_rows)
+
+# Lines 273-280: Write each header row
+for col_attr in header_rows:
+    vals = [
+        "" if (val := getattr(col.info, col_attr)) is None else str(val)
+        for col in self.cols
+    ]
+    hdrs_list.append(vals)
+```
+
+## RST Writer Current Implementation
+
+### RST Class (lines 25-37)
+```python
+class RST(FixedWidth):
+    """reStructuredText simple format table."""
+    
+    _format_name = "rst"
+    _description = "reStructuredText simple table"
+    data_class = SimpleRSTData
+    header_class = SimpleRSTHeader
+
+    def __init__(self):
+        super().__init__(delimiter_pad=None, bookend=False)
+```
+
+### SimpleRSTHeader Class (lines 8-22)
+```python
+class SimpleRSTHeader(FixedWidthHeader):
+    position_line = 0
+    start_line = 1
+    splitter_class = DefaultSplitter
+    position_char = "="
+
+    def get_fixedwidth_params(self, line):
+        vals, starts, ends = super().get_fixedwidth_params(line)
+        # The right hand column can be unbounded
+        ends[-1] = None
+        return vals, starts, ends
+```
+
+### SimpleRSTData Class (lines 25-31)
+```python
+class SimpleRSTData(FixedWidthData):
+    start_line = 3
+    end_line = -1
+    splitter_class = FixedWidthTwoLineDataSplitter
+```
+
+### RST Writer Method (lines 39-47)
+```python
+def write(self, lines):
+    lines = super().write(lines)
+    lines = [lines[1]] + lines + [lines[1]]
+    return lines
+```
+
+## What Needs to be Added to RST
+
+### 1. RST Class Constructor
+The RST class needs to accept and store the `header_rows` parameter:
+
+```python
+def __init__(self, header_rows=None):
+    if header_rows is None:
+        header_rows = ["name"]  # Default to just column names
+    super().__init__(delimiter_pad=None, bookend=False, header_rows=header_rows)
+```
+
+### 2. SimpleRSTHeader Class Updates
+The SimpleRSTHeader class needs to handle variable header rows:
+
+```python
+class SimpleRSTHeader(FixedWidthHeader):
+    position_line = 0
+    splitter_class = DefaultSplitter
+    position_char = "="
+
+    def __init__(self, header_rows=None):
+        if header_rows is None:
+            header_rows = ["name"]
+        self.header_rows = header_rows
+        super().__init__()
+```
+
+### 3. SimpleRSTData Class Updates
+The SimpleRSTData class needs to handle variable start lines based on header_rows:
+
+```python
+class SimpleRSTData(FixedWidthData):
+    splitter_class = FixedWidthTwoLineDataSplitter
+
+    def __init__(self, header_rows=None):
+        if header_rows is None:
+            header_rows = ["name"]
+        self.header_rows = header_rows
+        self.start_line = len(header_rows) + 1  # +1 for the position line
+```
+
+## Test Evidence
+
+From `/testbed/astropy/io/ascii/tests/test_fixedwidth.py`:
+
+### Test with Multiple Header Rows (lines 575-579)
+```python
+header_rows = ["dtype", "name", "unit", "format", "description"]
+dat = ascii.read(tbl, format="fixed_width", delimiter="|", header_rows=header_rows)
+out = StringIO()
+ascii.write(dat, out, format="fixed_width", delimiter="|", header_rows=header_rows)
+```
+
+### Two-line Header Test (lines 594-598)
+```python
+header_rows = ["dtype", "unit", "format", "description", "name"]
+dat = ascii.read(tbl, format="fixed_width_two_line", header_rows=header_rows)
+out = StringIO()
+ascii.write(dat, out, format="fixed_width_two_line", header_rows=header_rows)
+```
+
+## Current RST Format Limitations
+
+The current RST writer is hardcoded to expect:
+- Line 0: Position line (with "=" characters)
+- Line 1: Column names
+- Line 2: Position line (with "-" characters) 
+- Line 3+: Data rows
+
+The RST writer needs to be made flexible to handle different header row configurations, similar to how fixed_width handles multiple header rows for different types of metadata.

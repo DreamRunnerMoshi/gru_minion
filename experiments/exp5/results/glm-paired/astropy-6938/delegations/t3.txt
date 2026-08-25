@@ -1,0 +1,86 @@
+# Findings on _scale_back_ascii function and chararray operations
+
+## Summary
+
+The `output_field` parameter in `_scale_back_ascii` is a `numpy.chararray` object created by the `_get_recarray_field` function. The current implementation uses a non-inplace `replace()` method that creates a new array, but there are alternative approaches for in-place modification.
+
+## Type and Creation of output_field
+
+**Type:** `numpy.chararray` (imported as `chararray` from numpy)
+
+**Creation location:** The `output_field` is created by the `_get_recarray_field` function at line 1267 in `/testbed/astropy/io/fits/fitsrec.py`. This function:
+
+```python
+def _get_recarray_field(array, key):
+    field = np.recarray.field(array, key)
+    if (field.dtype.char in ('S', 'U') and
+            not isinstance(field, chararray.chararray)):
+        field = field.view(chararray.chararray)
+    return field
+```
+
+**Usage in `_scale_back_ascii`:** The `output_field` is passed as the third parameter and represents the character array containing the ASCII output that will be written.
+
+## Current Replace Operation Issue
+
+The problematic line is at line 1264:
+```python
+output_field.replace(encode_ascii('E'), encode_ascii('D'))
+```
+
+**Issue:** The `chararray.replace()` method does NOT modify in-place - it returns a new array, leaving the original `output_field` unchanged.
+
+## Available Methods for In-Place Modification
+
+Based on testing, here are the available approaches:
+
+### 1. Direct Element Assignment (Already Used Elsewhere)
+The function already uses direct element assignment in the loop:
+```python
+output_field[jdx] = value
+```
+
+### 2. Assignment Back to Original Array
+```python
+output_field[:] = np.char.replace(output_field, encode_ascii('E'), encode_ascii('D'))
+```
+
+### 3. Using np.char.replace with Assignment
+The codebase already demonstrates this pattern at line 837:
+```python
+dummy = np.char.replace(dummy, encode_ascii('D'), encode_ascii('E'))
+```
+
+### 4. Available In-Place Operations Tested:
+- **Element assignment:** `arr[0] = 'new_value'` ✓
+- **Bulk assignment:** `arr[:] = new_values` ✓
+- **put method:** `arr.put([indices], values)` ✓
+- **NOT available:** `arr.putmask()` (raises AttributeError)
+
+## Alternative Replace Patterns
+
+**Pattern 1 - Assignment back to self:**
+```python
+output_field[:] = np.char.replace(output_field, encode_ascii('E'), encode_ascii('D'))
+```
+
+**Pattern 2 - Using np.char.replace directly (similar to line 837):**
+```python
+replaced = np.char.replace(output_field, encode_ascii('E'), encode_ascii('D'))
+output_field[:] = replaced
+```
+
+## Dismissed Alternatives
+
+- **chararray.replace() itself:** Does not modify in-place - returns new array
+- **putmask method:** Not available on chararray objects
+- **Any method with "inplace" in name:** No such methods exist for chararray
+
+## Recommendation
+
+The most straightforward fix is to use pattern 1:
+```python
+output_field[:] = np.char.replace(output_field, encode_ascii('E'), encode_ascii('D'))
+```
+
+This approach is consistent with how the codebase handles similar operations elsewhere (like line 837) and ensures the changes are applied to the original `output_field` array.

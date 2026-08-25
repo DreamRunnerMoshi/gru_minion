@@ -1,0 +1,42 @@
+# Findings for _scale_back_ascii Function Analysis
+
+## Summary
+I found one call to `_scale_back_ascii` in the codebase. The function modifies `output_field` in-place rather than returning a new value, as evidenced by the `output_field.replace()` call within the function.
+
+## Function Signature
+```python
+def _scale_back_ascii(self, col_idx, input_field, output_field):
+```
+Location: `/testbed/astropy/io/fits/fitsrec.py:1196`
+
+## Call Site
+```python
+self._scale_back_ascii(indx, dummy, raw_field)
+```
+Location: `/testbed/astropy/io/fits/fitsrec.py:1125`
+
+## Calling Context
+The function is called within a method that processes ASCII table data conversion. The calling code is part of a conditional block that checks if the column definitions are of type `_AsciiColDefs`:
+
+```python
+# ASCII table, convert numbers to strings
+if isinstance(self._coldefs, _AsciiColDefs):
+    self._scale_back_ascii(indx, dummy, raw_field)
+```
+
+## Function Analysis
+The function converts internal array values back to ASCII table representation. Key points about `output_field` usage:
+
+1. **Input/Output Parameters**: 
+   - `input_field`: Internal representation of values
+   - `output_field`: Character array representing ASCII output that will be written
+
+2. **In-place Modification**: The function modifies `output_field` directly rather than returning a new value. This is evident from the final line:
+   ```python
+   output_field.replace(encode_ascii(E), encode_ascii(D))
+   ```
+
+3. **Data Flow**: The function formats values from `input_field` and assigns them to `output_field[jdx]` in a loop, then performs the in-place replacement.
+
+## Conclusion
+The `_scale_back_ascii` function modifies `output_field` in-place and does not return a new value. Any changes needed to the `output_field` processing should be made within the function rather than expecting a return value.
