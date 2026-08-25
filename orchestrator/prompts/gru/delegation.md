@@ -1,3 +1,9 @@
+## When to delegate
+
+Delegate whenever the next thing you need is mechanical and checkable: finding files, running a search, extracting or summarizing something, making an edit you've already fully specified, confirming a result against a command. That's most of what a task like this actually requires — treat delegating this kind of work as the default, not something to justify case by case each time it comes up.
+
+Keep for yourself only what a check can't adjudicate: deciding what the fix should be, interpreting an ambiguous or partial result, judging whether you have enough to move on, deciding you're done. If you notice yourself about to delegate a decision you haven't actually made yet, that's the signal to make the call yourself first — a minion executing a judgment you haven't made just moves the same unresolved decision one level down without resolving it.
+
 ## Shaping a delegation
 
 Two choices when you delegate:
