@@ -11,7 +11,7 @@
 # transcribed for 4 of 5 instances (review.md R3).
 set -uo pipefail
 
-ARM="${1:?usage: evaluate.sh <A|B> <model-string>}"
+ARM="${1:?usage: evaluate.sh <results-label> <model-string>}"
 MODEL="${2:?}"
 INSTANCES="astropy__astropy-12907 astropy__astropy-14182 astropy__astropy-14365 astropy__astropy-14995 astropy__astropy-6938"
 PYTHON="${PYTHON:-$(command -v python3)}"

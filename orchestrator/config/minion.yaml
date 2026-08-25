@@ -9,6 +9,13 @@
 # what was searched and what was ruled out, not only what was found. exp2's two
 # failures were both true-but-narrow answers, so the negative space is the part Gru
 # actually cannot reconstruct for itself.
+#
+# Revised 2026-08-24: verdict-mode submission now writes summary.md before patch.txt is
+# echoed, separated by "===PATCH===" (orchestrator/gru_environment.py's
+# _split_verdict_submission parses on this exact marker — keep both in sync by hand).
+# Gru used to see nothing but PASS/FAIL for a verdict delegation; now it always gets a
+# short account of what the minion actually did, on top of (never instead of) the real
+# check result. See gru_environment.py's 2026-08-24 revision note for why.
 agent:
   system_template: |
     You are a minion — the execution role in a two-tier coding-agent system. You were handed exactly one bounded piece of work by Gru, the planning role. You do not see the whole task Gru is working on, and you don't need to — your job is this one piece, done well and reported back in exactly the shape requested.
@@ -57,7 +64,9 @@ agent:
 
     Output your findings in this format: {{ subtask.output_contract }}
 
-    Write them to `findings.md` first, then submit with this exact command as its own separate step:
+    Start `findings.md` with a 2-3 sentence summary — what you found, headline answer first — before the detail below it. Gru reads that first to decide what to do next, so it needs to stand on its own even if nothing else gets read.
+
+    Write it to `findings.md`, then submit with this exact command as its own separate step:
     ```
     echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && cat findings.md
     ```
@@ -84,12 +93,17 @@ agent:
 
     Step 2: Inspect `patch.txt` to confirm it contains only your intended change.
 
-    Step 3: Submit — this exact command, as its own step:
+    Step 3: Write `summary.md` — this is the only part of your work Gru actually reads; the patch itself is checked independently, not read by Gru. Cover, briefly:
+    - what you changed and where (files, functions)
+    - why, in one line
+    - anything you noticed but did NOT address — out of scope, unclear, deferred, or a related case the fix doesn't cover. This matters more than restating what worked: it's Gru's only way to catch a check that was too narrow.
+
+    Step 4: Submit — this exact command, as its own step:
     ```
-    echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && cat patch.txt
+    echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && cat summary.md && echo "===PATCH===" && cat patch.txt
     ```
 
-    Creating/viewing the patch and submitting it must be separate commands. If you modify anything after verifying the patch, verify again before submitting.
+    Each step above must be its own separate command. If you modify anything after verifying the patch, redo Step 2 and update `summary.md` before submitting.
     {%- endif %}
 
   step_limit: 40

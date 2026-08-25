@@ -1,18 +1,38 @@
 #!/usr/bin/env python3
 """Run the Gru/minion architecture on a single SWE-bench instance.
 
-Same model for both roles for this experiment (Phase 1 framework validation,
-see design/infra/04-machine-config.md and memory project-machine-config) — using
-the same model Gru/minion isolates the architecture's effect from model-capability
-differences, directly comparable against exp1's solo-minion baseline on the same
-instances.
+Renamed 2026-08-24 from run_exp2_single.py (git history preserved via `git mv`): it was
+written for exp2 (the first experiment to introduce Gru/minion, vs. exp0/exp1's
+solo-minion) but is generic per-instance orchestration — exp3's arm B, its diagnostic
+runs, and any future orchestrator/config/gru-*.yaml variant all reuse it unchanged, so
+the exp2-specific name was a misnomer.
+
+Originally one shared `--model` for both roles (Phase 1 framework validation, see
+design/infra/04-machine-config.md and memory project-machine-config) — using the same
+model Gru/minion isolates the architecture's effect from model-capability differences,
+directly comparable against exp1's solo-minion baseline on the same instances.
+
+Revised 2026-08-24: `--gru-model`/`--minion-model` let the two roles use genuinely
+different models (e.g. a frontier planner + a cheap executor over a hosted API), which
+is what actually makes a cost comparison meaningful — Phase 1 held cost constant by
+construction. `--api-base` is now optional: self-hosted Ollama needs it (point at the
+serving instance); a hosted-API model (e.g. `openrouter/...`, routed by litellm via an
+API key env var, not a custom endpoint) doesn't.
 
 Usage:
-    python -m orchestrator.run_exp2_single \\
+    # self-hosted, one model both roles (original Phase 1 usage):
+    python -m orchestrator.run_gru_session \\
         --instance astropy__astropy-12907 \\
         --model ollama_chat/qwen3.8:27b \\
         --api-base http://<gpu-instance-ip>:<mapped-port> \\
         --output-dir experiments/exp2/results/astropy-12907
+
+    # hosted API, different model per role:
+    OPENROUTER_API_KEY=... python -m orchestrator.run_gru_session \\
+        --instance astropy__astropy-14182 \\
+        --gru-model openrouter/deepseek/deepseek-v4-pro-0813 \\
+        --minion-model openrouter/deepseek/deepseek-v4-flash-0731 \\
+        --output-dir experiments/exp4/results/astropy-14182
 """
 
 import argparse
@@ -40,6 +60,8 @@ from minisweagent.run.benchmarks.swebench import DATASET_MAPPING, get_sb_environ
 
 from orchestrator.gru_environment import GruEnvironment  # noqa: E402
 from orchestrator.gru_model import GruModel  # noqa: E402
+from orchestrator.gru_config import load_gru_config  # noqa: E402
+from orchestrator.cost_context import describe_cost_ratio  # noqa: E402
 from orchestrator.cache_stats import extract_cache_stats, merge_cache_stats  # noqa: E402
 from orchestrator.token_usage import extract_token_usage  # noqa: E402
 from minisweagent.agents.default import DefaultAgent  # noqa: E402
@@ -47,7 +69,7 @@ from minisweagent.agents.default import DefaultAgent  # noqa: E402
 CONFIG_DIR = Path(__file__).parent / "config"
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
-logger = logging.getLogger("run_exp2_single")
+logger = logging.getLogger("run_gru_session")
 
 
 def load_yaml(path: Path) -> dict:
@@ -59,11 +81,18 @@ def main() -> None:
     parser.add_argument("--subset", default="lite", help="SWE-bench subset (lite/verified/...)")
     parser.add_argument("--split", default="test")
     parser.add_argument("--instance", required=True, help="SWE-bench instance_id")
-    parser.add_argument("--model", required=True, help="litellm model string, used for BOTH Gru and minion")
-    parser.add_argument("--api-base", required=True, help="Ollama/OpenAI-compatible API base URL")
+    parser.add_argument("--model", help="litellm model string for BOTH roles (fallback when --gru-model/--minion-model aren't given)")
+    parser.add_argument("--gru-model", help="litellm model string for Gru specifically; overrides --model for Gru")
+    parser.add_argument("--minion-model", help="litellm model string for the minion specifically; overrides --model for the minion")
+    parser.add_argument("--api-base", help="Ollama/OpenAI-compatible API base URL — needed for self-hosted serving, not for a hosted-API model routed by litellm's provider prefix (e.g. openrouter/...)")
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--gru-config", default="gru.yaml", help="Config filename under orchestrator/config/ for Gru's prompt (for A/B comparisons against an alternate prompt)")
     args = parser.parse_args()
+
+    gru_model_name = args.gru_model or args.model
+    minion_model_name = args.minion_model or args.model
+    if not gru_model_name or not minion_model_name:
+        parser.error("need a model for both roles: pass --model, or both --gru-model and --minion-model")
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -73,7 +102,7 @@ def main() -> None:
     instance = instances[args.instance]
 
     session_config = load_yaml(CONFIG_DIR / "session.yaml")
-    gru_config = load_yaml(CONFIG_DIR / args.gru_config)
+    gru_config = load_gru_config(args.gru_config)
     logger.info(f"Using Gru config: {args.gru_config}")
     minion_config = load_yaml(CONFIG_DIR / "minion.yaml")
 
@@ -82,12 +111,13 @@ def main() -> None:
 
     try:
         gru_model = GruModel(
-            model_name=args.model,
-            model_kwargs={**gru_config["model"]["model_kwargs"], "api_base": args.api_base},
+            model_name=gru_model_name,
+            model_kwargs={**gru_config["model"]["model_kwargs"], **({"api_base": args.api_base} if args.api_base else {})},
+            policy=gru_config["tool_policy"],
         )
         minion_model_kwargs = {
-            "model_name": args.model,
-            "model_kwargs": {**minion_config["model"]["model_kwargs"], "api_base": args.api_base},
+            "model_name": minion_model_name,
+            "model_kwargs": {**minion_config["model"]["model_kwargs"], **({"api_base": args.api_base} if args.api_base else {})},
         }
         minion_agent_kwargs = {
             k: v for k, v in minion_config["agent"].items() if k not in ("system_template", "instance_template")
@@ -118,6 +148,12 @@ def main() -> None:
         # surface each turn's own token cost, not just delegations' (see gru_environment.py).
         gru_env.gru_agent = gru_agent
 
+        cost_context = describe_cost_ratio(gru_model_name, minion_model_name)
+        if cost_context:
+            logger.info(f"Cost context given to Gru:{cost_context}")
+        else:
+            logger.info("No real pricing found for one or both models — cost_context omitted")
+
         logger.info("Starting Gru session")
         start_time = time.time()
         try:
@@ -125,6 +161,7 @@ def main() -> None:
                 task_description=instance["problem_statement"],
                 repo_name=instance.get("repo", ""),
                 repo_path_or_access_instructions=session_config["environment"]["cwd"],
+                cost_context=cost_context,
             )
         except Exception as e:
             # An uncaught exception (e.g. litellm exhausting retries) must not lose the
@@ -160,7 +197,7 @@ def main() -> None:
 
         prediction = {
             args.instance: {
-                "model_name_or_path": args.model,
+                "model_name_or_path": gru_model_name if gru_model_name == minion_model_name else f"gru={gru_model_name}+minion={minion_model_name}",
                 "instance_id": args.instance,
                 "model_patch": patch,
             }
@@ -175,7 +212,8 @@ def main() -> None:
         }
         cost_summary = {
             "instance_id": args.instance,
-            "model": args.model,
+            "gru_model": gru_model_name,
+            "minion_model": minion_model_name,
             "start_time": start_time,
             "end_time": end_time,
             "wall_clock_seconds": end_time - start_time,

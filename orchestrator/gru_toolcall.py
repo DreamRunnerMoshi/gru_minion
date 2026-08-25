@@ -1,8 +1,15 @@
 """Tool schemas and action parsing for Gru's loop.
 
 Mirrors minisweagent.models.utils.actions_toolcall (which hardcodes a single
-"bash" tool) but supports Gru's four actions instead. See prompts/gru-loop.md
+"bash" tool) but supports Gru's own action set instead. See prompts/gru-loop.md
 for the design rationale and prompts/README.md for the revision history.
+
+Revised 2026-08-24: the action set is no longer fixed at four. `ToolPolicy` +
+`build_tools(policy)` let a session offer any subset (delegate_to_minion and finish
+are always present; think, run_check, returns='verdict', and finish's verification
+requirement are each independently toggleable) — orchestrator/config/gru.yaml
+currently uses the fully-permissive default (all four, no restrictions); the
+restrictive path exists for whenever a narrower session is wanted again.
 
 Revised 2026-08-22 (see review.md R5/R6/R13/R15 and the delegation-criterion
 discussion behind them):
@@ -38,8 +45,10 @@ discussion behind them):
   Gru batched delegations it should have issued one at a time.
 """
 
+import copy
 import json
 import time
+from dataclasses import dataclass
 
 from jinja2 import StrictUndefined, Template
 
@@ -191,11 +200,78 @@ FINISH_TOOL = {
 
 GRU_TOOLS = [DELEGATE_TOOL, THINK_TOOL, RUN_CHECK_TOOL, FINISH_TOOL]
 
-_TOOL_NAMES = {"delegate_to_minion", "think", "run_check", "finish"}
-
 _DELEGATE_REQUIRED = ("description", "returns", "mode", "inputs", "output_contract")
 _RETURNS = {"findings", "verdict"}
 _MODES = {"oneshot", "agentic"}
+
+
+@dataclass(frozen=True)
+class ToolPolicy:
+    """What Gru is offered this session — added 2026-08-24. Defaults reproduce the
+    original, fully-permissive design unchanged: every existing config that doesn't
+    set `tool_policy` behaves exactly as before.
+
+    This is deliberately the only lever here — which actions/fields exist at all — not
+    a lever on how Gru should use them. That distinction matters: this project's stance
+    (2026-08-23) is that Gru's delegation judgement should not be forced by the harness.
+    A policy that removes `verdict` or drops `run_check` isn't forcing a *choice* Gru
+    would otherwise make freely; it's defining what session is being run. Nothing here
+    nudges Gru's behavior within whatever action set it's given.
+    """
+
+    allow_think: bool = True
+    allow_run_check: bool = True
+    allow_verdict: bool = True
+    require_finish_verification: bool = True
+
+    @classmethod
+    def from_dict(cls, d: dict | None) -> "ToolPolicy":
+        return cls(**(d or {}))
+
+
+def build_tools(policy: ToolPolicy | None = None) -> list[dict]:
+    """The tool list actually offered to the model this session, shaped by `policy`."""
+    policy = policy or ToolPolicy()
+    tools = [_delegate_tool(policy)]
+    if policy.allow_think:
+        tools.append(THINK_TOOL)
+    if policy.allow_run_check:
+        tools.append(RUN_CHECK_TOOL)
+    tools.append(_finish_tool(policy))
+    return tools
+
+
+def _tool_names(policy: ToolPolicy) -> set[str]:
+    names = {"delegate_to_minion", "finish"}
+    if policy.allow_think:
+        names.add("think")
+    if policy.allow_run_check:
+        names.add("run_check")
+    return names
+
+
+def _delegate_tool(policy: ToolPolicy) -> dict:
+    if policy.allow_verdict:
+        return DELEGATE_TOOL
+    tool = copy.deepcopy(DELEGATE_TOOL)
+    props = tool["function"]["parameters"]["properties"]
+    props["returns"] = {
+        "type": "string",
+        "enum": ["findings"],
+        "description": "Always 'findings' in this session: the minion's actual output comes back to you.",
+    }
+    del props["verification"]
+    return tool
+
+
+def _finish_tool(policy: ToolPolicy) -> dict:
+    if policy.require_finish_verification:
+        return FINISH_TOOL
+    tool = copy.deepcopy(FINISH_TOOL)
+    tool["function"]["description"] = "Declare the task complete."
+    tool["function"]["parameters"]["properties"].pop("final_verification", None)
+    tool["function"]["parameters"]["required"] = ["summary"]
+    return tool
 
 
 def _format_error(format_error_template: str, *, error: str, has_tool_calls: bool, template_kwargs: dict) -> dict:
@@ -228,12 +304,13 @@ def _escalation_prefix(consecutive_format_errors: int) -> str:
     )
 
 
-def _validate_delegate(args: dict) -> str:
+def _validate_delegate(args: dict, policy: ToolPolicy) -> str:
     missing = [k for k in _DELEGATE_REQUIRED if k not in args]
     if missing:
         return f"delegate_to_minion missing required field(s): {missing}."
-    if args.get("returns") not in _RETURNS:
-        return f"delegate_to_minion 'returns' must be one of {sorted(_RETURNS)}, got {args.get('returns')!r}."
+    allowed_returns = _RETURNS if policy.allow_verdict else {"findings"}
+    if args.get("returns") not in allowed_returns:
+        return f"delegate_to_minion 'returns' must be one of {sorted(allowed_returns)}, got {args.get('returns')!r}."
     if args.get("mode") not in _MODES:
         return f"delegate_to_minion 'mode' must be one of {sorted(_MODES)}, got {args.get('mode')!r}."
     inputs = args.get("inputs")
@@ -246,7 +323,7 @@ def _validate_delegate(args: dict) -> str:
         return "delegate_to_minion.inputs missing required 'scope'."
     verification = args.get("verification")
     verification = verification if isinstance(verification, dict) else {}
-    if args["returns"] == "verdict" and not verification.get("checks"):
+    if policy.allow_verdict and args["returns"] == "verdict" and not verification.get("checks"):
         return (
             "delegate_to_minion with returns='verdict' requires at least one verification.checks entry "
             '(as an object: {"checks": ["..."]}) — the verdict is computed by running them, so there is '
@@ -261,10 +338,12 @@ def _validate_delegate(args: dict) -> str:
     return ""
 
 
-def _validate_finish(args: dict) -> str:
-    final_verification = args.get("final_verification")
+def _validate_finish(args: dict, policy: ToolPolicy) -> str:
     if "summary" not in args:
         return "finish missing required field 'summary'."
+    if not policy.require_finish_verification:
+        return ""
+    final_verification = args.get("final_verification")
     if not isinstance(final_verification, dict):
         return (
             'finish.final_verification must be a JSON object with a \'checks\' field (e.g. {"checks": [...]}), '
@@ -281,6 +360,7 @@ def parse_gru_actions(
     format_error_template: str,
     template_kwargs: dict | None = None,
     consecutive_format_errors: int = 0,
+    policy: ToolPolicy | None = None,
 ) -> list[dict]:
     """Parse Gru's tool calls into action dicts. Raises FormatError on malformed/unknown calls.
 
@@ -292,9 +372,15 @@ def parse_gru_actions(
     call (0 on a fresh turn) — the caller (GruModel) owns this count and resets it to 0 on any
     clean parse. Used to escalate the correction text (_escalation_prefix) instead of repeating
     the same message every time; see that function's docstring for why.
+
+    policy: which of the four actions/fields this session actually offers (ToolPolicy) — must
+    match what build_tools(policy) advertised to the model, so a name it was never offered is
+    rejected the same way an unknown tool always would be, not silently accepted.
     """
+    policy = policy or ToolPolicy()
     template_kwargs = template_kwargs or {}
     escalation = _escalation_prefix(consecutive_format_errors)
+    tool_names = _tool_names(policy)
     if not tool_calls:
         raise FormatError(
             _format_error(
@@ -302,7 +388,7 @@ def parse_gru_actions(
                 error=(
                     escalation
                     + "No tool calls found in the response. Every response MUST include exactly one tool call "
-                    f"({', '.join(sorted(_TOOL_NAMES))}). Use 'think' if the next step is a decision rather than work."
+                    f"({', '.join(sorted(tool_names))})."
                 ),
                 has_tool_calls=False,
                 template_kwargs=template_kwargs,
@@ -338,13 +424,13 @@ def parse_gru_actions(
     elif not error_msg:
         args = parsed
 
-    if not error_msg and name not in _TOOL_NAMES:
-        error_msg = f"Unknown tool '{name}'. Must be one of {sorted(_TOOL_NAMES)}."
+    if not error_msg and name not in tool_names:
+        error_msg = f"Unknown tool '{name}'. Must be one of {sorted(tool_names)}."
 
     if not error_msg and name == "delegate_to_minion":
-        error_msg = _validate_delegate(args)
+        error_msg = _validate_delegate(args, policy)
     if not error_msg and name == "finish":
-        error_msg = _validate_finish(args)
+        error_msg = _validate_finish(args, policy)
     if not error_msg and name == "think" and not args.get("note"):
         error_msg = "think requires a non-empty 'note'."
     if not error_msg and name == "run_check" and not args.get("checks"):

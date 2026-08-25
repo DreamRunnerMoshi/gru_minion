@@ -1,0 +1,42 @@
+# Summary
+
+## What changed and where
+- **File:** `astropy/io/ascii/rst.py`, class `RST`.
+- In `RST.__init__`: added `self.data.start_line = self.header.start_line + len(self.header.header_rows) + 1` after the existing `super().__init__(delimiter_pad=None, bookend=False, header_rows=header_rows)` call. This makes reading correctly start the data line past all header_rows (name, unit, ...) rather than hardcoded line 3, enabling RST read with multiple header_rows.
+- In `RST.write`: refactored the border-line construction to introduce a local `n_header_rows = len(self.header.header_rows)` and use it in place of the repeated `len(self.header.header_rows)`, preserving identical behavior.
+
+## Why
+The writer already supported `header_rows`, but the reader's `SimpleRSTData.start_line` was fixed at 3, so multi-row headers were not read correctly. Setting `data.start_line` dynamically from `header.start_line + len(header_rows) + 1` fixes round-tripping.
+
+## Verified
+- write with `header_rows=['name','unit']` produces expected output
+- default write (no header_rows) unchanged
+- read/write roundtrip with header_rows passes (units restored)
+- `pytest test_rst.py test_fixedwidth.py` -> 44 passed
+
+## Noticed but NOT addressed (out of scope / note)
+- The working tree I received already contained the pre-existing (uncommitted) `header_rows` support in `__init__` and `write` relative to git HEAD; my `git diff` therefore includes those lines together with my additions, representing the complete desired RST header_rows state. I left them intact since they are required for correct read/write roundtrip.
+- No files outside `rst.py` were modified; no tests modified.
+===PATCH===
+diff --git a/astropy/io/ascii/rst.py b/astropy/io/ascii/rst.py
+index abdeba8ef..cf78f0829 100755
+--- a/astropy/io/ascii/rst.py
++++ b/astropy/io/ascii/rst.py
+@@ -57,10 +57,14 @@ class RST(FixedWidth):
+     data_class = SimpleRSTData
+     header_class = SimpleRSTHeader
+ 
+-    def __init__(self):
+-        super().__init__(delimiter_pad=None, bookend=False)
++    def __init__(self, header_rows=None):
++        super().__init__(
++            delimiter_pad=None, bookend=False, header_rows=header_rows
++        )
++        self.data.start_line = self.header.start_line + len(self.header.header_rows) + 1
+ 
+     def write(self, lines):
+         lines = super().write(lines)
+-        lines = [lines[1]] + lines + [lines[1]]
++        n_header_rows = len(self.header.header_rows)
++        lines = [lines[n_header_rows]] + lines + [lines[n_header_rows]]
+         return lines

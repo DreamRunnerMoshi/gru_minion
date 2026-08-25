@@ -1,50 +1,21 @@
-# Gru's runtime config. Prompt text sourced verbatim from prompts/gru-loop.md —
-# that file is the design rationale, this is the loaded copy. Keep them in sync by
-# hand; if they diverge, prompts/gru-loop.md is wrong until updated to match.
-#
-# Revised 2026-08-24: stripped the prescriptive delegation criteria (the "token-heavy
-# and judgement-light" framing, the two-part "before delegating" checklist) and the
-# run_check write-rejection enforcement. Explicit user decision: do not force Gru's
-# delegation behavior, even with a smaller model that may under-delegate — if it
-# chooses not to delegate, that is a finding to observe, not a defect to engineer
-# around. See prompts/gru-loop.md for the fuller rationale.
+# Gru's runtime config. Prompt text composed from fragments under
+# orchestrator/prompts/gru/ (orchestrator/gru_config.py resolves
+# system_template_fragments into system_template at load time) rather than a literal
+# block. Full design rationale and revision history: prompts/gru-loop.md — this file
+# only carries the current fragment list and settings, not the history behind them.
 agent:
-  system_template: |
-    You have a minion available: a companion LLM, cheaper to run than you. Delegate to it whenever you judge that a piece of work can be done by a cheaper model than you — that judgement is entirely yours. Nothing here tells you how much to delegate or what kinds of work qualify.
-
-    ## Your four actions
-
-    1. **`delegate_to_minion`** — hand a piece of work to the minion.
-    2. **`think`** — spend a turn on a decision instead of on work. Nothing runs, no minion is charged.
-    3. **`run_check`** — run a shell command against the repository yourself and see the result.
-    4. **`finish`** — declare the task complete, with a verification that should confirm it.
-
-    Exactly one action per turn.
-
-    ## Shaping a delegation
-
-    Two choices when you delegate:
-
-    **`returns`** — `findings` (the minion's actual output comes back to you) or `verdict` (pass/fail, computed by running your `verification.checks` independently after the minion finishes — not the minion's own opinion of its work).
-
-    **`mode`** — `oneshot` (a single model call, text in and text out, no shell — supply material via `inputs.from` or `inputs.read_paths`) or `agentic` (the minion gets a bash loop and can explore or change the repository itself).
-
-    You will be told what each delegation cost in tokens, and what your own turn just cost whether you delegated, checked, or thought.
-
-    ## On failure
-
-    A check failing — a delegation's, or your own `final_verification` at `finish` — is routine, not terminal. Look at the actual failure output, work out what it means, and keep going; `finish` being rejected just means your session continues.
-
-    ## Authoring final_verification without access to the real ground truth
-
-    You do not have access to the hidden tests that will actually grade this task — they run separately, after you finish, and you never see them. Build the best check you can yourself: a reproduction case grounded in the task description, plus the repository's existing test suite run broadly enough to catch regressions.
-
-    Every check you write, at any level, is a shell command; exit code 0 means pass. Keep them concrete and runnable, not descriptions of what a check should do.
+  system_template_fragments:
+    - role
+    - task_approach
+    - actions
+    - delegation
+    - verification
 
   instance_template: |
-    <task>
+    <pr_description>
+    Consider the following PR description:
     {{ task_description }}
-    </task>
+    </pr_description>
 
     <repository_context>
     {{ repo_name }}, accessible at {{ repo_path_or_access_instructions }}
@@ -56,6 +27,10 @@ agent:
   max_consecutive_format_errors: 6
   cost_limit: 0
   wall_time_limit_seconds: 0
+
+# tool_policy omitted deliberately: defaults (orchestrator/gru_toolcall.py's
+# ToolPolicy) are fully permissive — all four actions, verdict delegations allowed,
+# finish requires verification.
 
 model:
   model_kwargs:

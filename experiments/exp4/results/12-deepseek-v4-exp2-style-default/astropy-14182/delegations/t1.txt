@@ -1,0 +1,40 @@
+# Summary
+
+## What changed
+Modified `/testbed/astropy/io/ascii/rst.py` (class `RST`) only:
+
+1. `RST.__init__(self)` → `RST.__init__(self, header_rows=None)`, passing `header_rows=header_rows` through to the `FixedWidth` superclass (`delimiter_pad=None, bookend=False`).
+2. `RST.write` no longer hardcodes `lines[1]` as the border/separator line. It now computes the separator index as `len(self.header.header_rows)` and uses that index for both the top and bottom border lines.
+
+## Why
+So the RST writer accepts the `header_rows` keyword argument and emits correct reStructuredText tables with multiple header rows (e.g. both name and unit rows), while keeping the default single-header-row output byte-for-byte identical.
+
+## Verification
+- `header_rows=['name','unit']` produces exactly the 3-header-line RST table (border, name row, unit row, border).
+- Default write (no `header_rows`) produces the previous single-header-row output unchanged.
+- `pytest astropy/io/ascii/tests/test_rst.py astropy/io/ascii/tests/test_fixedwidth.py -q` → 44 passed.
+
+## Noticed but not addressed
+- Reading RST tables with multiple header rows is not part of this change (SimpleRSTHeader/SimpleRSTData unchanged); the scope was writer-side only.
+- No tests were modified, and no files outside `astropy/io/ascii/rst.py` were touched.
+===PATCH===
+diff --git a/astropy/io/ascii/rst.py b/astropy/io/ascii/rst.py
+index abdeba8ef..679aea53a 100755
+--- a/astropy/io/ascii/rst.py
++++ b/astropy/io/ascii/rst.py
+@@ -57,10 +57,12 @@ class RST(FixedWidth):
+     data_class = SimpleRSTData
+     header_class = SimpleRSTHeader
+ 
+-    def __init__(self):
+-        super().__init__(delimiter_pad=None, bookend=False)
++    def __init__(self, header_rows=None):
++        super().__init__(
++            delimiter_pad=None, bookend=False, header_rows=header_rows
++        )
+ 
+     def write(self, lines):
+         lines = super().write(lines)
+-        lines = [lines[1]] + lines + [lines[1]]
++        lines = [lines[len(self.header.header_rows)]] + lines + [lines[len(self.header.header_rows)]]
+         return lines
