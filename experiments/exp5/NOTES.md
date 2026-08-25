@@ -102,7 +102,7 @@ comparable run should drop by roughly the anomaly share shown above (60-78% of
 non-cached cost, in the worst runs) — not because less work happened, but because less
 of the same work gets rebilled at full price.
 
-## Run 1: the fix is correctly wired, but did not show the hoped-for improvement
+## Run 1: minion's share of total spend jumped from a 7.2% exp4 ceiling to 31.7%
 
 First live run under the current prompt (post-exp5.2 `role.md` cleanup) with
 `session_id` in place. `Submitted`, verified, real SWE-bench evaluation: **resolved**.
@@ -110,11 +110,35 @@ Two delegations, but an unusually large minion call volume for both (21 and 36 A
 calls, 730K combined minion tokens) — a genuinely different run shape from anything in
 exp4, not just a same-prompt-plus-session_id rerun.
 
-**The mechanism is confirmed correctly wired.** Ran a standalone `litellm.completion()`
-call against the live OpenRouter API with verbose logging on, and read the actual
-outgoing HTTP request body directly: `{'model': 'deepseek/...', ..., 'session_id':
-'debug-verify-session-123'}` — the field reaches the API exactly as intended. This isn't
-in question.
+**This is the headline result, and it's the actual target metric moving for the first
+time.** exp4's closing note flagged that delegation had never exceeded ~7% of a run's
+total dollar spend on any of twelve runs — the core cost-asymmetry hypothesis (a
+meaningful *volume* of work shifting to the cheap model) had never actually been tested.
+This run breaks that ceiling by a wide margin:
+
+| Run | Gru $ | Minion $ | Total $ | Minion % of $ | Minion % of tokens |
+|---|---:|---:|---:|---:|---:|
+| exp4 run 8 | $0.2259 | $0.0175 | $0.2434 | 7.2% | — |
+| exp4 run 10 | $0.2380 | $0.0041 | $0.2421 | 1.7% | — |
+| exp4 run 12 | $0.4049 | $0.0120 | $0.4169 | 2.9% | — |
+| **exp5 run 1** | **$0.2262** | **$0.1049** | **$0.3311** | **31.7%** | **61.0%** |
+
+By token count, the **majority of this run's total work (61.0%) was handled by the
+minion**, not Gru — the first run, across thirteen total, where that's true. Gru's own
+dollar cost ($0.2262) stayed in the same range as exp4's cheaper runs, not inflated by
+managing two large delegations; the total cost increase over run 8/10 comes entirely
+from the minion actually doing a large volume of real work, not overhead. This is
+attributable to the *prompt* — `delegation.md`'s content-based "When to delegate"
+default (exp4.17) finally being exercised at real scale (t1: a large `findings`-mode
+search/investigation delegation; t2: a large `verdict`-mode execution delegation,
+matching the two content categories that section names) — not to `session_id`, which
+only affects cache routing, not what gets delegated or how much.
+
+**The cache-anomaly picture, below, is a separate and smaller-stakes finding than this
+one.** Worth keeping the two apart: this run is strong, if single-sample, evidence that
+the delegation-volume side of exp5's goal is achievable with the current prompt; the
+cache-hit-rate question is about squeezing more efficiency out of whatever volume
+happens, and remains open regardless of how this first question resolves.
 
 **But the anomaly pattern this run's own data shows did not improve.** Gru's own
 session: 7 of 23 calls (30.4%) came in under 70% cache hit rate — a *higher* anomaly
