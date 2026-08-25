@@ -474,6 +474,18 @@ vs. `deepseek-v4-pro-0813`'s $1.32/$3.96 — the same ~9-14x-per-token, "20-30x 
 after cache effects" ratio given to Gru in `role.md`'s `{{ cost_context }}`, where that
 placeholder was present).
 
+**Total tokens is a misleading proxy for `$` here — cache-hit tokens are billed at
+essentially $0, not the standard per-token rate.** Confirmed by solving each run's
+`gru.cost` backward: it reproduces exactly as `non_cached_prompt_tokens × $1.32/M +
+completion_tokens × $3.96/M`, with cached tokens contributing ~$0.00001/M — noise. This
+is why run 1 (2.46M total tokens, $0.2333) cost *less* than run 2 (2.35M total tokens —
+fewer — but $0.5440): run 1's cache hit rate was 95.9% (only 99,496 of 2.43M prompt
+tokens were fresh), run 2's was 86.1% (322,127 fresh — 3.2x more, despite a lower total).
+Whatever changed run 2's prompt prefix stability (it's the run that added
+`cost_context.py`'s dynamic cost line) cost more in cache misses than it saved anywhere
+else. Reading this table by total tokens instead of $ will get the ranking wrong in
+cases like this one — $ is the number that matters, not tokens.
+
 | Run | Gru tokens | Gru $ | Delegations | Minion tokens | Minion $ | Total $ | % spent on Gru |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | 1 | 2,459,958 | $0.2333 | 0 | 0 | $0.0000 | $0.2333 | 100.0% |
