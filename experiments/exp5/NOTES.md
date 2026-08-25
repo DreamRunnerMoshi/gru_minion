@@ -235,19 +235,139 @@ delegation front at 61.0% minion tokens; this run beats that on cost-shift but n
 correctness. The two things this project cares about — cost-shift and correctness —
 still haven't been demonstrated together in the same run.
 
+## Runs 4+: the cross-vendor batch — three pairs, solo vs. paired, real SWE-bench eval
+
+Runs 2-3 left the cost-shift/correctness tension unresolved on a single R1/flash pair
+and a single instance. To get more than n=1, the user asked for more pairs "from
+different models" and a full run across the 5-instance set (the same 5 astropy
+instances used throughout exp3-5), solo and paired, per pair — scoped down from "all of
+SWE-bench Lite" via an explicit tradeoff question, landing on 3 pairs (Qwen, GLM,
+OpenAI) x {solo, paired} x 5 instances = 30 configs, budget-capped against the
+project's remaining $5.33 of OpenRouter credit (real balance checked live via
+OpenRouter's `/credits` endpoint before every run, not self-tracked spend — see
+`scripts/exp5_batch.sh`).
+
+Pairs (same-vendor Gru/minion, real OpenRouter pricing per M tokens, verified live):
+
+| Pair | Gru | Minion | Gru $/M | Minion $/M |
+|---|---|---|---:|---:|
+| qwen | qwen/qwen3-max | qwen/qwen3-coder-flash | $0.78 / $3.90 | $0.195 / $0.975 |
+| glm | z-ai/glm-4.6 | z-ai/glm-4.5-air | $0.50 / $2.00 | $0.13 / $0.85 |
+| gpt | openai/gpt-5-mini | openai/gpt-4.1-nano | (tracked via real `usage.cost`) | $0.10 / $0.40 |
+
+**Two infrastructure bugs surfaced mid-batch, both fixed and both real, not
+task-specific:**
+
+1. **Silent cost-tracking failure for non-DeepSeek models** (exp5.12): mini-swe-agent's
+   own cost tracker uses litellm's static local price registry, which doesn't have
+   every OpenRouter model in it. For `qwen/qwen3-max` this silently tracked $0.0 for a
+   call OpenRouter itself billed $0.0017 for — `MSWEA_COST_TRACKING=ignore_errors`
+   swallowed the lookup failure rather than raising it. This made `--cost-limit` a
+   silent no-op for any such model — caught live via a raw HTTP response showing real
+   nonzero cost against a $0.0 tracked cost. Fixed by having `GruModel`/`MinionModel`
+   prefer the response's own real `usage.cost` field (OpenRouter always reports this;
+   `orchestrator/real_cost.py`, pinned by `tests/test_real_cost.py`). One already-run
+   config (`qwen-solo/astropy-12907`, and separately `qwen-paired/astropy-12907`, same
+   bug window) had to be deleted and rerun under the fix.
+
+2. **Patch-extraction bug via `git commit`** (exp5.16): `openai/gpt-5-mini` routinely
+   commits its own fix as a normal part of its workflow — something no other model in
+   this project's history has done. `_finish()` used to read a bare `git diff` (working
+   tree only), which shows nothing once a change is committed. Gru's own
+   `final_verification` still genuinely passed (the fix really was in the repo), so it
+   submitted believing it had a real patch, and the harness silently recorded an empty
+   one. **All five `gpt-solo` runs and two of five `gpt-paired` runs** (`astropy-12907`,
+   `astropy-14182` — same Gru model) were reported as real SWE-bench failures
+   ("unresolved, empty patch") that were actually this bug, not a capability finding —
+   confirmed unrecoverable for the original containers (searched every trajectory
+   message for diff content; found none, only `git show --name-only` filename
+   listings). Fixed via `GruEnvironment.initial_commit` (captured at session start) +
+   `git diff {initial_commit}` in both `_finish()` and the crash-fallback path in
+   `run_gru_session.py`, pinned by a regression test
+   (`test_finish_captures_the_patch_even_if_gru_committed_it`). All 7 affected configs
+   were deleted and rerun under the fix; every retry produced a real, non-empty patch.
+
+A third thing worth recording as a finding, not a bug: `glm-paired/astropy-14182` hung
+twice, independently, with zero CPU/log activity for 15+ minutes the first time and
+confirmed-zero-progress again on a retry — the same model pair, same instance, same
+failure mode. Abandoned after the second hang (not essential to the batch, budget was
+tighter by then); `glm-paired`'s real evaluation is 4 completed instances, not 5.
+Separately, `qwen-solo/astropy-14995` produced a genuinely empty patch for a different,
+legitimate reason: it hit `LimitsExceeded` (the real `--cost-limit` cap) mid-debug,
+still failing its own reproduction script, with no working fix in the tree yet — not a
+patch-extraction artifact, an honest budget-exhaustion case.
+
+### Results: resolved rate, real SWE-bench evaluation, all 6 groups
+
+| Group | Resolved | Completed | Empty patch |
+|---|---:|---:|---:|
+| qwen-solo | 2/5 | 4/5 | 1 (budget exhaustion, legitimate) |
+| qwen-paired | 2/5 | 5/5 | 0 |
+| glm-solo | 3/5 | 5/5 | 0 |
+| glm-paired | 3/4 | 4/5 | 0 (1 instance abandoned: reproducible hang) |
+| gpt-solo | 3/5 | 5/5 | 0 (post-fix; was 0/5, all empty-patch, pre-fix) |
+| gpt-paired | 3/5 | 5/5 | 0 (post-fix; 2/5 were empty-patch, pre-fix) |
+
+No pair shows a clean solo-vs-paired resolve-rate difference on this 5-instance set —
+qwen and gpt are flat (2-vs-2, 3-vs-3), glm is flat modulo the abandoned instance
+(3-vs-3 on the 4 glm-paired actually completed). On this sample size, delegation isn't
+costing correctness anywhere, but it isn't demonstrably buying it either — the
+resolve-rate signal is just noise-dominated at n=5 per group.
+
+### Results: where the tokens and dollars actually go
+
+Gru $ is real (tracked via `usage.cost`, post exp5.12 fix). Minion $ isn't persisted in
+`cost_summary.json` per-call, so it's estimated here from minion prompt/completion
+token counts at each model's list price — an upper-bound estimate that ignores prompt
+caching, so real minion $ share is likely somewhat higher than shown (caching would
+lower minion $ less than it lowers Gru $, since Gru's system prompt is the larger fixed
+cost). Solo rows show 0% by construction — solo has no minion.
+
+| Pair | Mode | Gru tokens | Minion tokens | Minion tok share | Gru $ | Minion $ (est.) | Minion $ share (est.) |
+|---|---|---:|---:|---:|---:|---:|---:|
+| qwen | solo | 2,292,956 | 0 | 0% | $0.7805 | — | — |
+| qwen | paired | 1,958,387 | 7,184,118 | **78.6%** | $0.8189 | $1.5045 | **64.8%** |
+| glm | solo | 3,347,256 | 0 | 0% | $0.7306 | — | — |
+| glm | paired | 1,364,969 | 2,193,886 | **61.6%** | $0.2660 | $0.3311 | **55.5%** |
+| gpt | solo | 1,872,249 | 0 | 0% | $0.1451 | — | — |
+| gpt | paired | 1,551,914 | 18,542,343 | **92.3%** | $0.1789 | $1.8883 | **91.3%** |
+
+Every paired run shifts the majority of both tokens and dollars to the minion — this
+now holds across three independent vendors, not just the one DeepSeek pair from runs
+2-3, and the gpt pair pushes past run 3's 92.1% token share while landing squarely in
+"correct" territory (3/5 resolved, same as its solo baseline). That combination —
+large minion share *and* correct — that runs 2-3 explicitly flagged as unconfirmed, now
+has real instances (gpt-paired's 3 resolved astropy instances each ran with the vast
+majority of tokens and dollars on the cheap model). The unresolved tension from runs
+2-3 (heavy delegation vs. correctness) doesn't reproduce at this pair/task combination —
+gpt-paired resolves exactly as many instances as gpt-solo, while moving 92% of tokens
+and an estimated 91% of dollars to `gpt-4.1-nano`.
+
+qwen is the standout on delegation *frequency and readiness*, not magnitude — 78.6%
+token share is the middle of the three, but qwen-paired's own results_table shows the
+heaviest and most consistent per-instance delegation counts of any pair (see
+`experiments/exp5/results/qwen-paired/results_table.md`).
+
+### Operational footnote: vast.ai provisioning
+
+Three attempts to spin up a second, purpose-sized instance all failed (wrong image tag,
+a host that doesn't support VM-style images, one stuck permanently at `created`) before
+discovering the existing instance (48577034) already had 88 vCPU/128GB RAM — bigger
+than any offer being chased. All three failed instances were destroyed
+(`vastai destroy instance <id> -y`); the whole batch ran on the pre-existing instance.
+
 ## What's still open
 
-Not yet done: a genuinely controlled before/after for the `session_id` fix — the *same*
-prompt configuration, run twice, once without `session_id` (impossible to reconstruct
-now, since it's wired into every call unconditionally) and once with it, or at minimum
-several repeats under the current fixed prompt to see whether run 1's 30% anomaly rate
-is typical or itself an outlier. Also not yet done: repeating the r1/flash pair (or
-trying a different, less reasoning-heavy premium model) to see whether R1's specific
-diagnostic miss is a repeatable property of this model on this task, or this run's own
-variance — and whether a correct diagnosis with a large minion-token-share is
-achievable at all, or whether thoroughness (however cheaply purchased) and correctness
-are pulling against each other on this specific two-part-fix task. Until either is
-settled, exp5's central finding stays: the architecture *can* shift the substantial
-majority of token volume and dollar cost to the cheap model (confirmed twice now, at
-61% and 92%) — whether it can do that *and* stay correct, on this task, is still
-unconfirmed.
+The `session_id` fix still has no genuinely controlled before/after (the *same* prompt
+configuration, run twice, once without `session_id` and once with it) — impossible to
+reconstruct now that it's wired into every call unconditionally. Real per-minion-call
+`$` tracking (not just tokens) remains a gap — `cost_summary.json` tracks minion tokens
+exactly but not minion dollars, so every minion $ figure in this document is a
+list-price estimate, not a tracked one. And resolve rate is still noise-dominated at
+n=5 per group — enough to confirm the token/cost-shift finding holds up across three
+vendors, not enough to say anything sharper about correctness than "delegation didn't
+cost any of these three pairs a single resolved instance." Until either is settled,
+exp5's central finding stays: the architecture reliably shifts the substantial majority
+of both token volume and dollar cost to the minion (61-92% of tokens, 55-91% of
+estimated dollars, across four independent model pairs now — DeepSeek, Qwen, GLM, and
+GPT) and, at least at this sample size, without a visible cost to correctness.

@@ -1,77 +1,15 @@
-# Findings: RST Writer header_rows Implementation Analysis
+# RST Writer Class and FixedWidth header_rows Implementation
 
 ## Summary
 
-The RST writer class currently lacks the `header_rows` parameter that is fully implemented in the fixed_width writer. The fixed_width writer supports multiple header rows for different types of metadata (dtype, name, unit, format, description), while the RST writer is hardcoded to use a specific 3-line format with fixed roles. To add header_rows support to RST, the RST classes need to be modified to accept and process the header_rows parameter similar to how fixed_width does it.
+The RST writer class (/testbed/astropy/io/ascii/rst.py) inherits from FixedWidth and uses a simplified header structure, while the FixedWidth class (/testbed/astropy/io/ascii/fixedwidth.py) implements a comprehensive header_rows mechanism that supports multiple header rows with different column attributes like dtype, name, unit, format, and description.
 
-## File Locations
+## RST Writer Class Location
 
-- **RST writer class**: `/testbed/astropy/io/ascii/rst.py`
-- **Fixed_width writer class**: `/testbed/astropy/io/ascii/fixedwidth.py`
+**File**: `/testbed/astropy/io/ascii/rst.py`
 
-## Fixed_width header_rows Implementation
+The RST writer class inherits from FixedWidth:
 
-The fixed_width writer implements header_rows support in several key locations:
-
-### 1. FixedWidth Class Constructor (lines 345-357)
-```python
-def __init__(
-    self,
-    col_starts=None,
-    col_ends=None,
-    delimiter_pad=" ",
-    bookend=True,
-    header_rows=None,
-):
-    if header_rows is None:
-        header_rows = ["name"]
-    super().__init__()
-    self.data.splitter.delimiter_pad = delimiter_pad
-    self.data.splitter.bookend = bookend
-    self.header.col_starts = col_starts
-    self.header.col_ends = col_ends
-    self.header.header_rows = header_rows
-    self.data.header_rows = header_rows
-    if self.data.start_line is None:
-        self.data.start_line = len(header_rows)
-```
-
-### 2. FixedWidthHeader.get_cols() Method (lines 97, 163, 168)
-```python
-# Line 97: Get header_rows attribute
-header_rows = getattr(self, "header_rows", ["name"])
-
-# Line 163: Find which row contains column names
-line = self.get_line(lines, start_line + header_rows.index("name"))
-
-# Lines 168-175: Process all header rows
-for ii, attr in enumerate(header_rows):
-    if attr != "name":
-        line = self.get_line(lines, start_line + ii)
-        vals = self.get_fixedwidth_params(line)[0]
-        for col, val in zip(self.cols, vals):
-            if val:
-                setattr(col, attr, val)
-```
-
-### 3. FixedWidthData.write() Method (lines 262-273)
-```python
-# Line 262-263: Get header_rows for writing
-default_header_rows = [] if self.header.start_line is None else ["name"]
-header_rows = getattr(self, "header_rows", default_header_rows)
-
-# Lines 273-280: Write each header row
-for col_attr in header_rows:
-    vals = [
-        "" if (val := getattr(col.info, col_attr)) is None else str(val)
-        for col in self.cols
-    ]
-    hdrs_list.append(vals)
-```
-
-## RST Writer Current Implementation
-
-### RST Class (lines 25-37)
 ```python
 class RST(FixedWidth):
     """reStructuredText simple format table."""
@@ -85,105 +23,181 @@ class RST(FixedWidth):
         super().__init__(delimiter_pad=None, bookend=False)
 ```
 
-### SimpleRSTHeader Class (lines 8-22)
-```python
-class SimpleRSTHeader(FixedWidthHeader):
-    position_line = 0
-    start_line = 1
-    splitter_class = DefaultSplitter
-    position_char = "="
+The RST writer uses simplified header and data classes that inherit from FixedWidth but override some behaviors for RST format requirements.
 
-    def get_fixedwidth_params(self, line):
-        vals, starts, ends = super().get_fixedwidth_params(line)
-        # The right hand column can be unbounded
-        ends[-1] = None
-        return vals, starts, ends
+## FixedWidth Class and header_rows Implementation
+
+**File**: `/testbed/astropy/io/ascii/fixedwidth.py`
+
+### Class Definition
+
+```python
+class FixedWidth(basic.Basic):
+    """Fixed width table with single header line defining column names and positions."""
+    
+    _format_name = "fixed_width"
+    _description = "Fixed width"
+
+    header_class = FixedWidthHeader
+    data_class = FixedWidthData
+
+    def __init__(
+        self,
+        col_starts=None,
+        col_ends=None,
+        delimiter_pad=" ",
+        bookend=True,
+        header_rows=None,
+    ):
+        if header_rows is None:
+            header_rows = ["name"]
+        super().__init__()
+        self.data.splitter.delimiter_pad = delimiter_pad
+        self.data.splitter.bookend = bookend
+        self.header.col_starts = col_starts
+        self.header.col_ends = col_ends
+        self.header.header_rows = header_rows
+        self.data.header_rows = header_rows
+        if self.data.start_line is None:
+            self.data.start_line = len(header_rows)
 ```
 
-### SimpleRSTData Class (lines 25-31)
+### header_rows in FixedWidthHeader (lines 97-168)
+
+The header_rows implementation in the FixedWidthHeader class:
+
 ```python
-class SimpleRSTData(FixedWidthData):
-    start_line = 3
-    end_line = -1
-    splitter_class = FixedWidthTwoLineDataSplitter
+def get_cols(self, lines):
+    # ... initialization code ...
+    header_rows = getattr(self, "header_rows", ["name"])
+    
+    # Determine start_line and position_line
+    start_line = core._get_line_index(self.start_line, self.process_lines(lines))
+    position_line = core._get_line_index(
+        self.position_line, self.process_lines(lines)
+    )
+
+    # Handle different cases for header parsing
+    if start_line is None:
+        # No header line case
+        # ... auto-generate column names ...
+    else:
+        # Find the line with column names
+        line = self.get_line(lines, start_line + header_rows.index("name"))
+        self.names, starts, ends = self.get_fixedwidth_params(line)
+
+        # Set additional column attributes from header rows
+        for ii, attr in enumerate(header_rows):
+            if attr != "name":
+                line = self.get_line(lines, start_line + ii)
+                vals = self.get_fixedwidth_params(line)[0]
+                for col, val in zip(self.cols, vals):
+                    if val:
+                        setattr(col, attr, val)
+
+        # Set column start and end positions
+        for i, col in enumerate(self.cols):
+            col.start = starts[i]
+            col.end = ends[i]
 ```
 
-### RST Writer Method (lines 39-47)
+### header_rows in FixedWidthData (lines 262-283)
+
+The header_rows implementation in the FixedWidthData class:
+
 ```python
 def write(self, lines):
-    lines = super().write(lines)
-    lines = [lines[1]] + lines + [lines[1]]
-    return lines
+    default_header_rows = [] if self.header.start_line is None else ["name"]
+    header_rows = getattr(self, "header_rows", default_header_rows)
+    
+    # Get data column widths
+    vals_list = []
+    col_str_iters = self.str_vals()
+    for vals in zip(*col_str_iters):
+        vals_list.append(vals)
+
+    # Get header column values for each header row attribute
+    hdrs_list = []
+    for col_attr in header_rows:
+        vals = [
+            "" if (val := getattr(col.info, col_attr)) is None else str(val)
+            for col in self.cols
+        ]
+        hdrs_list.append(vals)
+
+    # Calculate column widths incorporating both data and header
+    widths = [
+        max(len(vals[i_col]) for vals in vals_list)
+        for i_col in range(len(self.cols))
+    ]
+    if hdrs_list:
+        for i_col in range(len(self.cols)):
+            widths[i_col] = max(
+                widths[i_col], max(len(vals[i_col]) for vals in hdrs_list)
+            )
+
+    # Write header lines
+    for vals in hdrs_list:
+        lines.append(self.splitter.join(vals, widths))
+
+    # Write position line if needed
+    if self.header.position_line is not None:
+        vals = [self.header.position_char * width for width in widths]
+        lines.append(self.splitter.join(vals, widths))
+
+    # Write data lines
+    for vals in vals_list:
+        lines.append(self.splitter.join(vals, widths))
 ```
 
-## What Needs to be Added to RST
-
-### 1. RST Class Constructor
-The RST class needs to accept and store the `header_rows` parameter:
-
-```python
-def __init__(self, header_rows=None):
-    if header_rows is None:
-        header_rows = ["name"]  # Default to just column names
-    super().__init__(delimiter_pad=None, bookend=False, header_rows=header_rows)
-```
-
-### 2. SimpleRSTHeader Class Updates
-The SimpleRSTHeader class needs to handle variable header rows:
-
-```python
-class SimpleRSTHeader(FixedWidthHeader):
-    position_line = 0
-    splitter_class = DefaultSplitter
-    position_char = "="
-
-    def __init__(self, header_rows=None):
-        if header_rows is None:
-            header_rows = ["name"]
-        self.header_rows = header_rows
-        super().__init__()
-```
-
-### 3. SimpleRSTData Class Updates
-The SimpleRSTData class needs to handle variable start lines based on header_rows:
-
-```python
-class SimpleRSTData(FixedWidthData):
-    splitter_class = FixedWidthTwoLineDataSplitter
-
-    def __init__(self, header_rows=None):
-        if header_rows is None:
-            header_rows = ["name"]
-        self.header_rows = header_rows
-        self.start_line = len(header_rows) + 1  # +1 for the position line
-```
-
-## Test Evidence
+## Test Examples
 
 From `/testbed/astropy/io/ascii/tests/test_fixedwidth.py`:
 
-### Test with Multiple Header Rows (lines 575-579)
+### Single header row with multiple attributes (lines 564-579):
+
 ```python
-header_rows = ["dtype", "name", "unit", "format", "description"]
-dat = ascii.read(tbl, format="fixed_width", delimiter="|", header_rows=header_rows)
-out = StringIO()
-ascii.write(dat, out, format="fixed_width", delimiter="|", header_rows=header_rows)
+def test_fixed_width_header_rows():
+    tbl = [
+        "| int16 | float32 |      <U3 | int64 |",
+        "|     a |       b |        c |     d |",
+        "|     m |         |          | m / s |",
+        "|       |     .2f |          |       |",
+        "|       |         | C column |       |",
+        "|     1 |    1.00 |        c |     4 |",
+        "|     2 |    2.00 |        d |     5 |",
+        "|     3 |    3.00 |        e |     6 |",
+    ]
+    header_rows = ["dtype", "name", "unit", "format", "description"]
+    dat = ascii.read(tbl, format="fixed_width", delimiter="|", header_rows=header_rows)
 ```
 
-### Two-line Header Test (lines 594-598)
+### Two-line header with multiple attributes (lines 582-598):
+
 ```python
-header_rows = ["dtype", "unit", "format", "description", "name"]
-dat = ascii.read(tbl, format="fixed_width_two_line", header_rows=header_rows)
-out = StringIO()
-ascii.write(dat, out, format="fixed_width_two_line", header_rows=header_rows)
+def test_fixed_width_two_line_header_rows():
+    tbl = [
+        "int32 float32      <U2 int64",
+        "    m                  m / s",
+        "          .2f               ",
+        "              C column      ",
+        "    a       b        c     d",
+        "----- ------- -------- -----",
+        "    1    1.00        c     4",
+        "    2    2.00        d     5",
+        "    3    3.00        e     6",
+    ]
+    header_rows = ["dtype", "unit", "format", "description", "name"]
+    dat = ascii.read(tbl, format="fixed_width_two_line", header_rows=header_rows)
 ```
 
-## Current RST Format Limitations
+## Key Implementation Details
 
-The current RST writer is hardcoded to expect:
-- Line 0: Position line (with "=" characters)
-- Line 1: Column names
-- Line 2: Position line (with "-" characters) 
-- Line 3+: Data rows
+1. **header_rows is a list of strings** that specifies what each header row represents
+2. **Default**: If not specified, header_rows defaults to ["name"]
+3. **Column attributes**: Common attributes include "dtype", "name", "unit", "format", "description"
+4. **Reading**: The parser finds the line containing "name" in header_rows to determine column names, then processes other attributes from corresponding lines
+5. **Writing**: The writer extracts column attributes for each header row type and formats them appropriately
+6. **RST writer**: Inherits from FixedWidth but doesn't override header_rows behavior, using the default single name row
 
-The RST writer needs to be made flexible to handle different header row configurations, similar to how fixed_width handles multiple header rows for different types of metadata.
+The RST writer class inherits the header_rows functionality from FixedWidth but uses a simplified configuration with just the name row, which is appropriate for RST table format requirements.

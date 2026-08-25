@@ -1,65 +1,129 @@
-# Summary
+# Test Script to Reproduce header_rows Issue with RST Format
 
-## Changes Made
+## Summary
 
-Modified `/testbed/astropy/io/ascii/rst.py` to support the `header_rows` parameter with the following changes:
+Created a comprehensive test script that reproduces the exact issue described in the PR: RST format in astropy does not support the `header_rows` parameter, even though it inherits from the `FixedWidth` class which does support this functionality. The test confirms this is a bug in the RST class implementation where the `__init__` method doesn't properly expose the `header_rows` parameter.
 
-1. **RST.__init__()** - Updated to accept `header_rows` parameter and pass it to parent `FixedWidth` class
-2. **SimpleRSTData** - Replaced static `start_line = 3` with dynamic calculation based on `header_rows` length (2 + len(header_rows))
-3. **RST.write()** - Updated to dynamically find and use separator lines instead of hardcoded index
+## Issue Details
 
-## Why
+The RST class (`/testbed/astropy/io/ascii/rst.py`) inherits from `FixedWidth` but overrides the `__init__` method without properly exposing the `header_rows` parameter:
 
-The changes enable the RST format to support multiple header rows (like name, unit, format) while maintaining the correct reStructuredText table format with proper separator lines.
+```python
+class RST(FixedWidth):
+    def __init__(self):
+        super().__init__(delimiter_pad=None, bookend=False)
+```
 
-## Notes
+The `header_rows` parameter is not passed through to the parent class, causing a `TypeError` when users try to use it.
 
-- The implementation maintains backward compatibility with the default `header_rows=['name']` behavior
-- The separator line detection looks for lines containing '=' characters that don't start with '|'
-- The `SimpleRSTData` class now calculates start_line dynamically based on the number of header rows
-===PATCH===
-diff --git a/astropy/io/ascii/rst.py b/astropy/io/ascii/rst.py
-index abdeba8ef..550a2e197 100755
---- a/astropy/io/ascii/rst.py
-+++ b/astropy/io/ascii/rst.py
-@@ -27,9 +27,13 @@ class SimpleRSTHeader(FixedWidthHeader):
- 
- 
- class SimpleRSTData(FixedWidthData):
--    start_line = 3
--    end_line = -1
--    splitter_class = FixedWidthTwoLineDataSplitter
-+    def __init__(self, **kwargs):
-+        super().__init__(**kwargs)
-+        # Calculate start_line based on header_rows length
-+        # Default header_rows=['name'] means start at line 3
-+        # If header_rows=['name', 'unit'], start at line 4, etc.
-+        header_rows = kwargs.get('header_rows', ['name'])
-+        self.start_line = 2 + len(header_rows)
- 
- 
- class RST(FixedWidth):
-@@ -57,10 +61,20 @@ class RST(FixedWidth):
-     data_class = SimpleRSTData
-     header_class = SimpleRSTHeader
- 
--    def __init__(self):
--        super().__init__(delimiter_pad=None, bookend=False)
-+    def __init__(self, header_rows=None):
-+        super().__init__(header_rows=header_rows)
- 
-     def write(self, lines):
-         lines = super().write(lines)
--        lines = [lines[1]] + lines + [lines[1]]
-+        # Use the last header line as the separator
-+        # Find the separator line (last line with ====)
-+        separator_line = None
-+        for i, line in enumerate(lines):
-+            if '=' in line and not line.strip().startswith('|'):
-+                separator_line = line
-+                break
-+        
-+        if separator_line:
-+            lines = [separator_line] + lines + [separator_line]
-+        
-         return lines
+## Test Script Created
+
+Created `reproduce_rst_header_rows_issue.py` which reproduces the issue with clear demonstrations:
+
+```bash
+cd /testbed && python reproduce_rst_header_rows_issue.py
+```
+
+### Test Results
+
+The script produces the following output confirming the bug:
+
+```
+Reproducing RST header_rows issue from PR description
+============================================================
+Issue: RST format doesn't support header_rows parameter
+even though it inherits from FixedWidth which does.
+============================================================
+=== Testing FixedWidth with header_rows (should work) ===
+✓ SUCCESS: FixedWidth supports header_rows
+  Column names: ["a", "'b'", "'c'", "'d'"]
+  Number of rows: 3
+  Sample data:  a   b   c    d  
+ m          m / s
+--- --- --- -----
+ --  -- C c    --
+
+=== Testing RST with header_rows (should fail - this is the bug) ===
+✓ EXPECTED FAILURE: RST doesn't support header_rows (this is the bug)
+  Error: __init__() got an unexpected keyword argument 'header_rows'
+
+=== Testing RST without header_rows (should work) ===
+✓ SUCCESS: RST works without header_rows
+  Column names: ["Col1", "'Col2'", "'Col3'"]
+  Number of rows: 2
+  Sample data: Col1 Col2  Col3
+---- ---- -----
+   1  1.2 Hello
+
+============================================================
+TEST SUMMARY:
+FixedWidth supports header_rows: True
+RST fails with header_rows (bug): True
+RST works without header_rows: True
+
+🐛 BUG CONFIRMED:
+   RST format does not support header_rows parameter
+   even though it inherits from FixedWidth which does support it.
+   The RST class.__init__() method should be updated to accept header_rows.
+```
+
+## Root Cause Analysis
+
+The issue is in `/testbed/astropy/io/ascii/rst.py` lines 44-48:
+
+```python
+class RST(FixedWidth):
+    """reStructuredText simple format table."""
+    _format_name = "rst"
+    _description = "reStructuredText simple table"
+    data_class = SimpleRSTData
+    header_class = SimpleRSTHeader
+
+    def __init__(self):
+        super().__init__(delimiter_pad=None, bookend=False)
+```
+
+The `__init__` method only passes `delimiter_pad` and `bookend` to the parent class, but does not pass through the `header_rows` parameter that FixedWidth supports.
+
+## Expected Behavior
+
+The RST format should support the `header_rows` parameter just like FixedWidth does, allowing users to parse complex RST tables with multiple header lines containing different types of information (dtype, name, unit, format, description, etc.).
+
+## Files Involved
+
+- `/testbed/astropy/io/ascii/rst.py` - Contains the buggy RST class
+- `/testbed/astropy/io/ascii/fixedwidth.py` - Contains the working FixedWidth class that RST inherits from
+- `/testbed/astropy/io/ascii/tests/test_rst.py` - Current RST tests (missing header_rows tests)
+- `/testbed/astropy/io/ascii/tests/test_fixedwidth.py` - Contains working header_rows tests for FixedWidth
+- `/testbed/reproduce_rst_header_rows_issue.py` - Newly created test script that reproduces the issue
+
+## Commands Used
+
+```bash
+# Create the test script
+cat > /testbed/reproduce_rst_header_rows_issue.py << 'EOF'
+[script content]
+EOF
+
+# Run the test script
+cd /testbed && python reproduce_rst_header_rows_issue.py
+```
+
+## Search Results
+
+The search revealed that:
+1. FixedWidth format has full header_rows support with comprehensive tests
+2. RST format has no header_rows support and no tests for it
+3. The RST class inherits from FixedWidth but doesn't expose the header_rows parameter
+4. No other ASCII format classes have this issue
+
+## Test Scripts Available
+
+Multiple test scripts were found and analyzed:
+- `test_rst_header_rows.py` - Basic test script
+- `test_rst_header_rows_issue.py` - Issue demonstration script
+- `test_rst_header_rows_issue_fixed.py` - Similar issue demonstration
+- `test_rst_header_rows_simple.py` - Simple version included in findings
+- `reproduce_rst_header_rows_issue.py` - Newly created comprehensive test script
+
+All existing scripts correctly reproduce the issue, confirming the bug is consistently reproducible across different test approaches.
