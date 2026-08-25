@@ -35,6 +35,15 @@ config/minion.yaml's verdict-mode Submission steps) and that summary — never t
 patch — is shown alongside the check's real pass/fail. The check result stays the only
 thing that decides PASS/FAIL; the summary is explicitly labeled as not to be trusted for
 correctness, only for "what happened."
+
+Revised 2026-08-25 (exp5 start): every delegation now carries an OpenRouter `session_id`
+(`minion-{run_id}-{delegation_id}`), stable across that one delegation's own turns. exp4's
+cost data showed real, provider-reported cache hit rate collapsing on a handful of calls
+per run (up to 10 of 41) with no correlation to wall-clock gaps — OpenRouter's own docs
+attribute this to sticky-routing drift: without an explicit session_id, the routing key
+is derived by hashing the opening messages, and a growing agent conversation changes that
+hash turn to turn, occasionally landing a request on a different backend than the one
+holding the warm cache. See run_gru_session.py's matching note and experiments/exp5/NOTES.md.
 """
 
 import logging
@@ -85,6 +94,7 @@ class GruEnvironment:
         minion_instance_template: str,
         output_dir: Path | None = None,
         logger: logging.Logger | None = None,
+        run_id: str = "test-session",
     ):
         self.docker_env = docker_env
         self.minion_model_kwargs = minion_model_kwargs
@@ -93,6 +103,11 @@ class GruEnvironment:
         self.minion_instance_template = minion_instance_template
         self.output_dir = output_dir
         self.logger = logger or logging.getLogger("gru.environment")
+        # OpenRouter sticky-routing key prefix — each delegation gets its own
+        # {run_id}-{delegation_id} session_id (see run_gru_session.py's 2026-08-25 note),
+        # since each delegation is its own conversation with its own prefix, not a
+        # continuation of Gru's.
+        self.run_id = run_id
         # Set by run_gru_session.py right after the DefaultAgent(gru_model, self, ...) that
         # owns this environment is constructed — can't be passed in __init__ since Gru's
         # agent doesn't exist yet at that point. Used only to surface each turn's own token
@@ -201,11 +216,14 @@ class GruEnvironment:
             parts.append(f"--- {path} ---\n{body}")
         return "\n\n".join(parts) if parts else "(none)"
 
-    def _run_oneshot(self, args: dict, material: str) -> tuple[str, dict[str, int], int, dict]:
+    def _run_oneshot(self, args: dict, material: str, delegation_id: str) -> tuple[str, dict[str, int], int, dict]:
         """A single model call: text in, text out, no shell. Returns (output, usage, n_calls)."""
         model_kwargs = {
             k: v for k, v in self.minion_model_kwargs.get("model_kwargs", {}).items() if k != "parallel_tool_calls"
         }
+        # A single call has nothing to route consistently against, but set it anyway for
+        # consistency with agentic mode and in case oneshot ever grows a retry/second call.
+        model_kwargs["extra_body"] = {"session_id": f"minion-{self.run_id}-{delegation_id}"}
         prompt = (
             f"<task>\n{args['description']}\n</task>\n\n"
             f"<output_contract>\n{args['output_contract']}\n</output_contract>\n\n"
@@ -234,7 +252,14 @@ class GruEnvironment:
         self, args: dict, material: str, delegation_id: str
     ) -> tuple[str, dict[str, int], int, str, str, dict]:
         """A full bash tool loop against the shared testbed."""
-        minion_model = LitellmModel(**self.minion_model_kwargs)
+        minion_model_kwargs = {
+            **self.minion_model_kwargs,
+            "model_kwargs": {
+                **self.minion_model_kwargs.get("model_kwargs", {}),
+                "extra_body": {"session_id": f"minion-{self.run_id}-{delegation_id}"},
+            },
+        }
+        minion_model = LitellmModel(**minion_model_kwargs)
         minion_output_path = None
         if self.output_dir is not None:
             minion_output_path = self.output_dir / "minions" / f"{delegation_id}.traj.json"
@@ -275,7 +300,7 @@ class GruEnvironment:
 
         exit_status, trajectory_path = "", ""
         if mode == "oneshot":
-            submission, tokens, n_calls, cache = self._run_oneshot(args, material)
+            submission, tokens, n_calls, cache = self._run_oneshot(args, material, delegation_id)
             exit_status = "Completed"
         else:
             submission, tokens, n_calls, exit_status, trajectory_path, cache = self._run_agentic(

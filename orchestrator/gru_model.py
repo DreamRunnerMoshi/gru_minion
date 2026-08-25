@@ -1,6 +1,14 @@
 """Gru's model wrapper: same as LitellmModel, but offers delegate_to_minion/finish
 instead of the hardcoded bash tool. Everything else (retry, cost tracking, message
 prep) is inherited unmodified from LitellmModel.
+
+Revised 2026-08-25 (exp5 start): takes an optional `run_id` and sets
+`model_kwargs["extra_body"]["session_id"]` itself, rather than requiring every call
+site to hand-construct that dict — the bug that motivated this: run_gru_session.py set
+it correctly, but tests/harness.py's separate GruModel construction silently didn't,
+so a naive test would have shown Gru's own calls with no session_id at all. Owning it
+here means any caller gets consistent behavior for free. See gru_environment.py's
+matching note for why session_id exists (OpenRouter sticky-routing, exp4's cache data).
 """
 
 import litellm
@@ -12,13 +20,19 @@ from orchestrator.gru_toolcall import ToolPolicy, build_tools, format_gru_observ
 
 
 class GruModel(LitellmModel):
-    def __init__(self, *, policy: ToolPolicy | None = None, **kwargs):
+    def __init__(self, *, policy: ToolPolicy | None = None, run_id: str = "test-session", **kwargs):
         super().__init__(**kwargs)
         # Which of Gru's actions/fields this session actually offers — added 2026-08-24
         # for bit-by-bit prompt experimentation (orchestrator/prompt_fragments.py).
         # Defaults to the original fully-permissive behavior.
         self._policy = policy or ToolPolicy()
         self._tools = build_tools(self._policy)
+        # Stable for Gru's whole session — every one of Gru's own turns shares this,
+        # unlike each delegation's own distinct session_id (see gru_environment.py).
+        self.config.model_kwargs = {
+            **self.config.model_kwargs,
+            "extra_body": {"session_id": f"gru-{run_id}"},
+        }
         # Consecutive FormatErrors on this model instance (one per Gru session), so
         # parse_gru_actions can escalate its correction text instead of repeating the same
         # message every retry — see gru_toolcall.py's _escalation_prefix. Reset on any clean
