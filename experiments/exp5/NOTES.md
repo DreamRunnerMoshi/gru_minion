@@ -102,12 +102,50 @@ comparable run should drop by roughly the anomaly share shown above (60-78% of
 non-cached cost, in the worst runs) — not because less work happened, but because less
 of the same work gets rebilled at full price.
 
-Not yet run live. The next step is a direct before/after comparison: re-run one of exp4's
-existing prompt configurations (a run with a clear anomaly signature, e.g. run 10's or
-run 11's) on the same instance with `session_id` now wired in, and check whether the
-per-call cache-hit-rate anomalies are gone and whether `$` drops by roughly the predicted
-amount. Only after that's confirmed does it make sense to move on to exp4's actual
-closing brief for prompt work: content-shaped, state-conditioned delegation rules,
-starting from a clean single-layer baseline rather than continuing to stack changes,
-tested toward the real target metric — minion's share of total token spend — not just
-"does delegation happen."
+## Run 1: the fix is correctly wired, but did not show the hoped-for improvement
+
+First live run under the current prompt (post-exp5.2 `role.md` cleanup) with
+`session_id` in place. `Submitted`, verified, real SWE-bench evaluation: **resolved**.
+Two delegations, but an unusually large minion call volume for both (21 and 36 API
+calls, 730K combined minion tokens) — a genuinely different run shape from anything in
+exp4, not just a same-prompt-plus-session_id rerun.
+
+**The mechanism is confirmed correctly wired.** Ran a standalone `litellm.completion()`
+call against the live OpenRouter API with verbose logging on, and read the actual
+outgoing HTTP request body directly: `{'model': 'deepseek/...', ..., 'session_id':
+'debug-verify-session-123'}` — the field reaches the API exactly as intended. This isn't
+in question.
+
+**But the anomaly pattern this run's own data shows did not improve.** Gru's own
+session: 7 of 23 calls (30.4%) came in under 70% cache hit rate — a *higher* anomaly
+rate than run 10's un-fixed baseline (10 of 41, 24.4%) — and overall cache hit rate
+(74.8%) was worse than most of exp4's twelve runs (typically 85-98%). Both minion
+delegations, despite each getting a distinct `session_id`, still showed several
+anomalous calls apiece (t1: 3 of 21, 91.6% overall; t2: 4 of 36, 82.4% overall) rather
+than the near-elimination the fix was meant to produce.
+
+**This is not clean evidence the fix doesn't work.** Two things are confounded in this
+one run that a real test needs to separate: (1) the prompt itself also changed
+(`role.md`'s boundary section removed, exp5.2) between this run and any exp4 baseline,
+and (2) this run's shape — two very large delegations dominating the session — is
+unlike any exp4 run's, so different cache dynamics could come from that alone,
+independent of routing. What this run *does* rule out is the easy version of the
+hypothesis: `session_id` is not a complete, guaranteed fix for these anomalies by
+itself, at least not one that shows up cleanly on the first try. Either sticky routing
+has limits beyond what the docs describe (backend-side cache eviction under memory
+pressure or its own TTL, which routing to the same backend can't prevent), or this is
+still just n=1 variance on top of a run that also changed for other reasons.
+
+## What's still open
+
+Not yet done: a genuinely controlled before/after — the *same* prompt configuration,
+run twice, once without `session_id` (impossible to reconstruct now, since it's wired
+into every call unconditionally) and once with it, or at minimum several repeats under
+the current fixed prompt to see whether run 1's 30% anomaly rate is typical or itself
+an outlier. Until that exists, exp5's cache-cost hypothesis is downgraded from
+"diagnosed and fixed" to "diagnosed, a plausible fix implemented and verified to reach
+the API, effect on actual cache behavior still unconfirmed." Only after that's settled
+does it make sense to move on to exp4's actual closing brief for prompt work:
+content-shaped, state-conditioned delegation rules, starting from a clean single-layer
+baseline rather than continuing to stack changes, tested toward the real target metric
+— minion's share of total token spend — not just "does delegation happen."
