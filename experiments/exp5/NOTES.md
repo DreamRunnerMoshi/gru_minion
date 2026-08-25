@@ -299,20 +299,39 @@ patch-extraction artifact, an honest budget-exhaustion case.
 
 ### Results: resolved rate, real SWE-bench evaluation, all 6 groups
 
-| Group | Resolved | Completed | Empty patch |
-|---|---:|---:|---:|
-| qwen-solo | 2/5 | 4/5 | 1 (budget exhaustion, legitimate) |
-| qwen-paired | 2/5 | 5/5 | 0 |
-| glm-solo | 3/5 | 5/5 | 0 |
-| glm-paired | 3/4 | 4/5 | 0 (1 instance abandoned: reproducible hang) |
-| gpt-solo | 3/5 | 5/5 | 0 (post-fix; was 0/5, all empty-patch, pre-fix) |
-| gpt-paired | 3/5 | 5/5 | 0 (post-fix; 2/5 were empty-patch, pre-fix) |
+The user's stated first bar for this architecture, put directly: "at first we need to
+make sure Gru-minion doesn't reduce accuracy." So the resolve-rate comparison below is
+scored apples-to-apples against the same nominal n=5 per pair — `glm-paired`'s 5th
+instance (`astropy-14182`, the reproducible hang) counts as unresolved here, not
+excluded, since that's the fair comparison against solo's n=5.
 
-No pair shows a clean solo-vs-paired resolve-rate difference on this 5-instance set —
-qwen and gpt are flat (2-vs-2, 3-vs-3), glm is flat modulo the abandoned instance
-(3-vs-3 on the 4 glm-paired actually completed). On this sample size, delegation isn't
-costing correctness anywhere, but it isn't demonstrably buying it either — the
-resolve-rate signal is just noise-dominated at n=5 per group.
+| Group | Resolved (of 5) | Empty patch |
+|---|---:|---:|
+| qwen-solo | 2/5 | 1 (budget exhaustion, legitimate) |
+| qwen-paired | 2/5 | 0 |
+| glm-solo | 3/5 | 0 |
+| glm-paired | 3/5 | 0 (1 never completed: reproducible hang, scored as unresolved) |
+| gpt-solo | 3/5 | 0 (post-fix; was 0/5, all empty-patch, pre-fix) |
+| gpt-paired | 3/5 | 0 (post-fix; 2/5 were empty-patch, pre-fix) |
+
+**The bar holds in all three pairs — paired never resolves fewer than solo.** But the
+count alone understates it for two of the three. Comparing the actual resolved
+instance *sets*, not just the totals:
+
+| Pair | Solo resolved | Paired resolved | Same instances? |
+|---|---|---|---|
+| qwen | 12907, 6938 | 12907, 14995 | No — same count (2/5), different instances (solo gets 6938 not 14995; paired gets 14995 not 6938) |
+| glm | 12907, 14995, 6938 | 12907, 14995, 6938 | **Yes — identical set** |
+| gpt | 12907, 14995, 6938 | 12907, 14995, 6938 | **Yes — identical set** |
+
+For glm and gpt, delegation didn't just match solo's *score* — it solved the exact same
+problems, while moving 62-92% of tokens and an estimated 56-91% of dollars onto the
+cheap model (see below). For qwen the net score is flat but the underlying outcome
+isn't identical — delegation traded one resolved instance for a different one, which is
+weaker evidence of "harmless" than glm/gpt's identical-set result, though still
+consistent with "doesn't reduce accuracy" on the scoreboard. At n=5 per group this
+doesn't yet prove delegation is *never* costly, only that it wasn't in this batch,
+across three independent vendors, on this instance set.
 
 ### Results: where the tokens and dollars actually go
 
