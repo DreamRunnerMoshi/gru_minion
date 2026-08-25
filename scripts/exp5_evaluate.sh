@@ -6,7 +6,9 @@
 #   scripts/exp5_evaluate.sh
 set -uo pipefail
 
-PYTHON="${PYTHON:-$(command -v python3)}"
+# Same venv default as exp5_batch.sh — see its comment.
+PYTHON="${PYTHON:-$HOME/venv/bin/python}"
+[[ -x "$PYTHON" ]] || PYTHON="$(command -v python3)"
 [[ -d orchestrator && -d experiments ]] || { echo "run from the repo root" >&2; exit 2; }
 
 RESULTS_ROOT="experiments/exp5/results"

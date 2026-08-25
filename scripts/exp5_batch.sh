@@ -13,7 +13,14 @@
 #   nohup scripts/exp5_batch.sh > exp5_batch.log 2>&1 &
 set -uo pipefail
 
-PYTHON="${PYTHON:-$(command -v python3)}"
+# nohup'd jobs don't inherit an activated venv — run_arm.sh got bitten by this
+# before (see its own comment) and this batch just repeated the mistake once:
+# a plain `command -v python3` fallback resolved to the system interpreter with
+# none of the project's dependencies installed, and every run failed instantly
+# on `ModuleNotFoundError: No module named 'datasets'`. Default explicitly to
+# the venv this project's harness VMs actually use.
+PYTHON="${PYTHON:-$HOME/venv/bin/python}"
+[[ -x "$PYTHON" ]] || PYTHON="$(command -v python3)"
 [[ -d orchestrator && -d experiments ]] || { echo "run from the repo root" >&2; exit 2; }
 [[ -f .env ]] && export "$(grep -v '^#' .env | xargs)"
 [[ -n "${OPENROUTER_API_KEY:-}" ]] || { echo "OPENROUTER_API_KEY not set" >&2; exit 2; }
