@@ -1,0 +1,31 @@
+Looking at the QDP implementation file, I need to analyze how commands are currently parsed and identify where case sensitivity issues occur.
+
+Let me examine the key parts of the code:
+
+1. In `_line_type()` function, there's a regex pattern for commands:
+   ```python
+   _command_re = r"READ [TS]ERR(\s+[0-9]+)+"
+   ```
+
+2. In `_get_tables_from_qdp_file()` function, there's command parsing logic:
+   ```python
+   command = cline.strip().split()
+   # This should never happen, but just in case.
+   if len(command) < 3:
+       continue
+   err_specs[command[1].lower()] = [int(c) for c in command[2:]]
+   ```
+
+The case sensitivity issue occurs in two main places:
+
+1. **Command recognition regex**: The regex `_command_re = r"READ [TS]ERR(\s+[0-9]+)+"` specifically matches "READ" followed by "SERR" or "TERR" in uppercase. If a command like "read serr" or "Read Terr" were encountered, it would not match and would raise a "Unrecognized QDP line" error.
+
+2. **Command processing**: In the `_get_tables_from_qdp_file` function, when parsing command lines, the code does:
+   ```python
+   err_specs[command[1].lower()] = [int(c) for c in command[2:]]
+   ```
+   While `.lower()` is used here to normalize case, this only works for the command type (second element). However, the initial regex matching is case-sensitive and requires exact capitalization.
+
+3. **Command name validation**: The code expects "READ SERR" or "READ TERR" exactly as written, with proper capitalization, but doesn't handle variations like "read serr", "Read Serr", etc.
+
+The primary case sensitivity issue is in the regular expression pattern that enforces strict uppercase matching for the command keywords, and the fact that the parser expects commands to be in a specific case format rather than being case-insensitive as would be expected for a robust parser.

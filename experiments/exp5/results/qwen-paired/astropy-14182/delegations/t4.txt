@@ -1,0 +1,75 @@
+## Summary
+
+I've examined the RST table writer implementation in astropy.io.ascii and compared it with the fixed_width writer's header_rows implementation. 
+
+The RST writer inherits from FixedWidth and uses FixedWidthHeader and FixedWidthData classes. However, it overrides the behavior to handle reStructuredText-specific formatting. The header_rows functionality in the fixed_width writer allows specifying multiple header rows beyond just the column names, such as dtype, unit, format, description, etc.
+
+Key findings:
+1. The RST writer uses FixedWidthHeader and FixedWidthData classes but doesn't directly expose header_rows functionality
+2. The fixed_width writer implements header_rows through the FixedWidthHeader.get_cols method 
+3. The header_rows parameter is processed in FixedWidthHeader.get_cols where it determines which lines correspond to which metadata attributes
+4. The RST writer has hardcoded behavior that doesn't make use of the flexible header_rows mechanism
+
+## Detailed Findings
+
+### RST Writer Implementation
+File: `/testbed/astropy/io/ascii/rst.py`
+
+The RST class inherits from FixedWidth and overrides:
+- `__init__`: sets `delimiter_pad=None` and `bookend=False`
+- `write`: adds extra lines to format the table properly
+
+It uses SimpleRSTHeader and SimpleRSTData classes which inherit from FixedWidthHeader and FixedWidthData respectively.
+
+### FixedWidth Header Rows Implementation
+File: `/testbed/astropy/io/ascii/fixedwidth.py`
+
+In FixedWidthHeader.get_cols method (lines ~130-170), the header_rows functionality is implemented:
+- Line 137: `header_rows = getattr(self, "header_rows", ["name"])` - gets the header_rows attribute or defaults to ["name"]
+- Lines 181-190: Loops through header_rows to extract metadata from corresponding lines
+- The header_rows parameter controls which lines in the input correspond to which metadata attributes (dtype, name, unit, format, description)
+
+### Key Code Snippets
+
+#### RST Writer Class Definition:
+```python
+class RST(FixedWidth):
+    # ... docstring ...
+    _format_name = "rst"
+    _description = "reStructuredText simple table"
+    data_class = SimpleRSTData
+    header_class = SimpleRSTHeader
+
+    def __init__(self):
+        super().__init__(delimiter_pad=None, bookend=False)
+
+    def write(self, lines):
+        lines = super().write(lines)
+        lines = [lines[1]] + lines + [lines[1]]
+        return lines
+```
+
+#### FixedWidth Header get_cols Method (relevant portion):
+```python
+def get_cols(self, lines):
+    # ...
+    header_rows = getattr(self, "header_rows", ["name"])
+    # ...
+    for ii, attr in enumerate(header_rows):
+        if attr != "name":
+            line = self.get_line(lines, start_line + ii)
+            vals = self.get_fixedwidth_params(line)[0]
+            for col, val in zip(self.cols, vals):
+                if val:
+                    setattr(col, attr, val)
+```
+
+### What Was Not Found
+
+I looked for explicit header_rows support in the RST writer but found that:
+1. The RST writer doesn't expose or use the header_rows parameter in its constructor
+2. The RST writer uses hardcoded behavior that assumes only a single header line for column names
+3. There's no mechanism in the RST writer to specify multiple header rows with different metadata attributes
+4. The RST writer relies on the standard fixed width header processing but doesn't extend it
+
+This means the RST writer has limited flexibility compared to the full fixed_width writer when it comes to handling complex header structures.
