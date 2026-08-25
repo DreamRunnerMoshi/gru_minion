@@ -1,0 +1,37 @@
+Created a test case that verifies lowercase QDP commands are properly parsed and added it to the existing test file. The test creates a QDP file with lowercase commands ('read terr 1' and 'read serr 2') and verifies that the parser can correctly handle them and extract the data. The test confirms that the existing functionality already supports case-insensitive command parsing due to the `re.IGNORECASE` flag that was already present in the `_line_type` function.
+
+The change is limited to adding one test function to `/testbed/astropy/io/ascii/tests/test_qdp.py` that validates the parsing of lowercase QDP commands.
+===PATCH===
+diff --git a/astropy/io/ascii/tests/test_qdp.py b/astropy/io/ascii/tests/test_qdp.py
+index ef24e6f6a..871e711c8 100755
+--- a/astropy/io/ascii/tests/test_qdp.py
++++ b/astropy/io/ascii/tests/test_qdp.py
+@@ -245,3 +245,28 @@ def test_get_lines_from_qdp(tmp_path):
+         assert file_output[i] == line
+         assert list_output[i] == line
+         assert text_output[i] == line
++
++def test_lowercase_commands(tmp_path):
++    """Test that lowercase QDP commands are properly parsed."""
++    example_qdp = """
++    ! Test for lowercase commands
++    read terr 1
++    read serr 2
++    ! Data section
++    53000.123456 2.37847222222222e-05    -2.37847222222222e-05   -0.212439       0.212439
++    55045.099887 1.14467592592593e-05    -1.14467592592593e-05   0.000000        0.000000
++    NO NO NO NO NO
++    """
++
++    path = tmp_path / "test_lower.qdp"
++
++    with open(path, "w") as fp:
++        print(example_qdp, file=fp)
++
++    # This should parse successfully even with lowercase commands
++    table = _read_table_qdp(fp.name, names=["MJD", "Rate"], table_id=0)
++    
++    # Verify that we can read the data correctly
++    assert len(table) == 2
++    assert table["MJD_perr"][0] == 2.37847222222222e-05
++    assert table["MJD_nerr"][0] == -2.37847222222222e-05

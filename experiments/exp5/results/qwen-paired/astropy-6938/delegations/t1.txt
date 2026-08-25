@@ -1,0 +1,79 @@
+Looking at the code in fitsrec.py, I need to find the D exponent handling code. Based on the context and the task description, this relates to how D exponents (used in FITS format for scientific notation) are replaced or handled.
+
+Let me examine the code for relevant sections dealing with D exponent replacement:
+
+```python
+        # Replace exponent separator in floating point numbers
+        if 'D' in format:
+            output_field.replace(encode_ascii('E'), encode_ascii('D'))
+```
+
+This appears in the `_scale_back_ascii` method, which handles conversion of internal array values back to ASCII table representation. However, looking more carefully at the broader context, I need to also examine where D exponents are handled during reading/conversion.
+
+Looking at the `_convert_ascii` method, I can see this line:
+
+```python
+        dummy = np.char.replace(dummy, encode_ascii('D'), encode_ascii('E'))
+```
+
+This shows the replacement of 'D' with 'E' during ASCII conversion, which is the inverse operation of what we saw in `_scale_back_ascii`.
+
+Here are the relevant code sections:
+
+```python
+    def _convert_ascii(self, column, field):
+        """
+        Special handling for ASCII table columns to convert columns containing
+        numeric types to actual numeric arrays from the string representation.
+        """
+
+        format = column.format
+        recformat = ASCII2NUMPY[format[0]]
+        # if the string = TNULL, return ASCIITNULL
+        nullval = str(column.null).strip().encode('ascii')
+        if len(nullval) > format.width:
+            nullval = nullval[:format.width]
+
+        # Before using .replace make sure that any trailing bytes in each
+        # column are filled with spaces, and *not*, say, nulls; this causes
+        # functions like replace to potentially leave gibberish bytes in the
+        # array buffer.
+        dummy = np.char.ljust(field, format.width)
+        dummy = np.char.replace(dummy, encode_ascii('D'), encode_ascii('E'))
+        null_fill = encode_ascii(str(ASCIITNULL).rjust(format.width))
+
+        # Convert all fields equal to the TNULL value (nullval) to empty fields.
+        # TODO: These fields really should be conerted to NaN or something else undefined.
+        # Currently they are converted to empty fields, which are then set to zero.
+        dummy = np.where(np.char.strip(dummy) == nullval, null_fill, dummy)
+
+        # always replace empty fields, see https://github.com/astropy/astropy/pull/5394
+        if nullval != b'':
+            dummy = np.where(np.char.strip(dummy) == b'', null_fill, dummy)
+
+        try:
+            dummy = np.array(dummy, dtype=recformat)
+        except ValueError as exc:
+            indx = self.names.index(column.name)
+            raise ValueError(
+                '{}; the header may be missing the necessary TNULL{} '
+                'keyword or the table contains invalid data'.format(
+                    exc, indx + 1))
+
+        return dummy
+
+    def _scale_back_ascii(self, col_idx, input_field, output_field):
+        """
+        Convert internal array values back to ASCII table representation.
+
+        The ``input_field`` is the internal representation of the values, and
+        the ``output_field`` is the character array representing the ASCII
+        output that will be written.
+        """
+
+        # ... (other code)
+
+        # Replace exponent separator in floating point numbers
+        if 'D' in format:
+            output_field.replace(encode_ascii('E'), encode_ascii('D'))
+```
