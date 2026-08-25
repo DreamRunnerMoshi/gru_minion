@@ -489,20 +489,35 @@ placeholder was present).
 | 11 | 2,223,160 | $0.4686 | 0 | 0 | $0.0000 | $0.4686 | 100.0% |
 | 12 | 1,761,530 | $0.4049 | 2 | 80,271 | $0.0120 | $0.4169 | 97.1% |
 
-Two things stand out, both bearing directly on exp5's stated interest in token savings:
+Three things stand out, all bearing directly on exp5's stated interest in token savings.
 
-**First, delegation's share of total spend has been tiny even when it happened.** Run
-12 — the day's best delegation result, the only one with a self-correcting delegation
-chain — still spent 97.1% of its dollars on Gru; the minion's $0.012 is a rounding error
-against Gru's $0.40. Run 8's 121,338 minion tokens (a full 40-step agentic delegation)
-is the largest single delegation of the day, and it's still 7.2% of that run's total.
-None of these runs have actually tested the project's core cost-asymmetry hypothesis at
-scale — that meaningful *volume* of work shifts to the cheap model — because delegation
-has stayed small and occasional, not "most of what needs to happen" the way exp2's and
-run 12's own prompt wording asked for. This is the real gap exp5 needs to close, not
-just "does Gru delegate at all."
+**First, run 10 — not run 12 — is the day's actual best result once cost is the metric.**
+Both resolved. Run 12's two-delegation chain is the more mechanistically interesting one
+(a delegation's own summary caught a gap, a second delegation closed it — see below), but
+it cost 72% more overall ($0.4169 vs. $0.2421) for the identical correctness outcome.
+The gap isn't just more turns (56 vs. 41, +37%) — average tokens *per turn* were also
+~75% higher (31,456 vs. 18,013), so the two effects compound. The likely mechanism: run
+10's pattern was diagnose-completely-then-delegate-once, paying delegation overhead
+(description, checks, minion trajectory, observation) a single time; run 12 paid that
+overhead twice, plus whatever extra context accumulated discovering the gap between the
+two delegations. **The mechanistically richest delegation pattern and the cheapest one
+were different runs** — worth remembering before treating "delegation did something
+interesting" as the same claim as "delegation saved money."
 
-**Second, Gru's own token spend has nothing to do with whether it delegates.** The
+**Second, delegation's share of total spend has been tiny in every run, including run
+10.** Even run 10's single, efficient delegation was only 1.7% of that run's total cost
+($0.0041 of $0.2421); run 12's two delegations, despite being the largest delegation
+share of the day, were still 2.9%. Run 8's 121,338-token single delegation (the largest
+individual delegation of the day) was 7.2% of its run's total — the ceiling observed all
+day. None of these runs have actually tested the project's core cost-asymmetry hypothesis
+at scale — that meaningful *volume* of work shifts to the cheap model — because
+delegation has stayed small and occasional everywhere, not "most of what needs to
+happen" the way exp2's and run 12's own prompt wording asked for. This is the real gap
+exp5 needs to close, not just "does Gru delegate at all," and not just "does a delegation
+chain self-correct" — *whether delegated work can be a large fraction of total spend
+while staying correct* is still completely untested.
+
+**Third, Gru's own token spend has nothing to do with whether it delegates.** The
 cheapest run (5, $0.10, forced/hurried, wrong) and one of the most expensive (11, $0.47,
 zero delegation, correct) bracket the whole range; delegation status doesn't predict
 where a run falls. Gru's cost is driven by turn count and how much repeated context
@@ -539,7 +554,11 @@ correctness") is a specific, evidenced *shape*, not a settled answer.
   the second half of a two-part fix through the delegation loop itself, not through its
   own re-derivation. This held up regardless of which delegation-trigger wording was
   layered on top of it, and is the single most mechanically verifiable finding of the
-  day.
+  day — but it is not the same finding as "cheapest correct run": that's run 10, at 58%
+  of run 12's total cost, from a single well-specified delegation after diagnosis was
+  already complete. Mechanistically interesting and cost-efficient turned out to be two
+  different runs, not one — worth keeping separate when exp5 decides what "success"
+  means for a prompt change.
 
 **What this argues for going into exp5**, matching the project's original commitment to
 not force Gru's behavior: keep delegation rules **content-shaped and state-conditioned**
