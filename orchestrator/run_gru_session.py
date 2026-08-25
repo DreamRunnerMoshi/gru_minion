@@ -104,7 +104,17 @@ def main() -> None:
         default=0.0,
         help="Hard dollar cap on Gru's own session (mini-swe-agent's own enforcement, raises LimitsExceeded and "
         "stops the session — real, not advisory). 0 (default) leaves the config's own cost_limit as-is. Does not "
-        "cap the minion, whose own delegations are typically much cheaper and already bounded by scope.",
+        "cap the minion — see --minion-cost-limit for that.",
+    )
+    parser.add_argument(
+        "--minion-cost-limit",
+        type=float,
+        default=0.0,
+        help="Hard dollar cap on each individual delegation's own agentic-mode session (same mini-swe-agent "
+        "enforcement as --cost-limit, applied per delegation, not summed across a session's delegations — exp5's "
+        "run 3 showed the minion can end up costing more in aggregate than Gru, and nothing currently caps the "
+        "running total across delegations in one Gru session, only each delegation's own spend and Gru's own "
+        "step_limit on how many it can issue). 0 (default) leaves minion.yaml's own cost_limit as-is.",
     )
     args = parser.parse_args()
 
@@ -148,6 +158,8 @@ def main() -> None:
         minion_agent_kwargs = {
             k: v for k, v in minion_config["agent"].items() if k not in ("system_template", "instance_template")
         }
+        if args.minion_cost_limit > 0:
+            minion_agent_kwargs["cost_limit"] = args.minion_cost_limit
 
         gru_env = GruEnvironment(
             docker_env=docker_env,
