@@ -463,3 +463,108 @@ now-three-layer-deep prompt, on one instance.
    isn't the whole story.
 7. **A different SWE-bench instance**, so any pattern found isn't entirely a property of
    this one astropy bug's specific two-part-fix shape.
+
+## Token and cost spent, all twelve runs
+
+Pulled directly from each run's `cost_summary.json` (`gru.total_tokens`/`gru.cost`, and
+per-delegation `prompt_tokens`/`completion_tokens` from `minions[]`). Minion dollar cost
+isn't recorded directly — computed here from the same real OpenRouter per-token pricing
+`cost_context.py` uses (`deepseek-v4-flash-0731`: $0.14/$0.28 per M input/output tokens,
+vs. `deepseek-v4-pro-0813`'s $1.32/$3.96 — the same ~9-14x-per-token, "20-30x cheaper
+after cache effects" ratio given to Gru in `role.md`'s `{{ cost_context }}`, where that
+placeholder was present).
+
+| Run | Gru tokens | Gru $ | Delegations | Minion tokens | Minion $ | Total $ | % spent on Gru |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 2,459,958 | $0.2333 | 0 | 0 | $0.0000 | $0.2333 | 100.0% |
+| 2 | 2,345,477 | $0.5440 | 0 | 0 | $0.0000 | $0.5440 | 100.0% |
+| 3 | 1,766,452 | $0.2229 | 0 | 0 | $0.0000 | $0.2229 | 100.0% |
+| 4 | 1,070,496 | $0.1962 | 0 | 0 | $0.0000 | $0.1962 | 100.0% |
+| 5 | 487,159 | $0.0997 | 0 | 0 | $0.0000 | $0.0997 | 100.0% |
+| 6 | 637,056 | $0.2107 | 1 | 15,090 | $0.0022 | $0.2130 | 98.9% |
+| 7 | 861,359 | $0.1351 | 0 | 0 | $0.0000 | $0.1351 | 100.0% |
+| 8 | 1,910,206 | $0.2259 | 1 | 121,338 | $0.0175 | $0.2434 | 92.8% |
+| 9 | 1,395,879 | $0.1885 | 0 | 0 | $0.0000 | $0.1885 | 100.0% |
+| 10 | 738,528 | $0.2380 | 1 | 27,472 | $0.0041 | $0.2421 | 98.3% |
+| 11 | 2,223,160 | $0.4686 | 0 | 0 | $0.0000 | $0.4686 | 100.0% |
+| 12 | 1,761,530 | $0.4049 | 2 | 80,271 | $0.0120 | $0.4169 | 97.1% |
+
+Two things stand out, both bearing directly on exp5's stated interest in token savings:
+
+**First, delegation's share of total spend has been tiny even when it happened.** Run
+12 — the day's best delegation result, the only one with a self-correcting delegation
+chain — still spent 97.1% of its dollars on Gru; the minion's $0.012 is a rounding error
+against Gru's $0.40. Run 8's 121,338 minion tokens (a full 40-step agentic delegation)
+is the largest single delegation of the day, and it's still 7.2% of that run's total.
+None of these runs have actually tested the project's core cost-asymmetry hypothesis at
+scale — that meaningful *volume* of work shifts to the cheap model — because delegation
+has stayed small and occasional, not "most of what needs to happen" the way exp2's and
+run 12's own prompt wording asked for. This is the real gap exp5 needs to close, not
+just "does Gru delegate at all."
+
+**Second, Gru's own token spend has nothing to do with whether it delegates.** The
+cheapest run (5, $0.10, forced/hurried, wrong) and one of the most expensive (11, $0.47,
+zero delegation, correct) bracket the whole range; delegation status doesn't predict
+where a run falls. Gru's cost is driven by turn count and how much repeated context
+(cache misses, file re-reads) accumulates over a session — the same variable the
+turn-count/investigation-depth reading has been tracking all day for *correctness* — not
+by how much work it handed off.
+
+## Conclusion — closing exp4
+
+Twelve runs, one instance, one model pair, a single evolving prompt: the honest state of
+the hypothesis ("does Gru delegate, and does prompting alone move that without breaking
+correctness") is a specific, evidenced *shape*, not a settled answer.
+
+**What's supported by more than one run:**
+
+- **Delegation does not track correctness on this task**, in either direction. 10 of 12
+  runs resolved; delegation count across the resolved runs ranged 0-2 with no visible
+  pattern. The two unresolved runs (5, 6) both delegated urgency-pushed, compressed
+  investigation, not lack of delegation itself.
+- **Urgency-based pushes ("minimize cost," "as much as possible") are the one thing that
+  reliably broke correctness** (runs 5-6), by compressing investigation before diagnosis
+  was actually done — not by delegation itself, since run 6's minion executed its
+  fully-specified instruction perfectly.
+- **Forceful wording alone does not reliably produce delegation.** Two of the four most
+  forceful prompts tried (run 6's "as much as possible," run 11's "forbidden... grunt
+  work") differ completely in outcome (delegated / didn't) — what predicted firing was
+  whether the rule's *content* matched this task's actual shape (code search, edits,
+  verification), not how strongly it was worded. Run 11's generic menial-task categories
+  never fired regardless of how forcefully they were stated; run 10 and run 12's
+  task-shaped, non-urgent rules did.
+- **The verdict-summary visibility mechanism (exp4.8) is a real, positive, checkable
+  contribution independent of the delegation-rate question.** Run 12 is direct evidence:
+  a delegation's own honest summary ("scope was writer-side only") is what let Gru find
+  the second half of a two-part fix through the delegation loop itself, not through its
+  own re-derivation. This held up regardless of which delegation-trigger wording was
+  layered on top of it, and is the single most mechanically verifiable finding of the
+  day.
+
+**What this argues for going into exp5**, matching the project's original commitment to
+not force Gru's behavior: keep delegation rules **content-shaped and state-conditioned**
+("delegate this kind of work, once you actually know what it is") rather than **urgency-
+or forcefulness-driven** ("as much as possible," "forbidden from"). The evidence this day
+produced is that the former can raise delegation without the investigation-compression
+failure the latter reliably causes — not because it's gentler, but because it targets a
+different thing (what counts as delegable) instead of pressuring the pace of work. That's
+a real constraint on how exp5's prompt work should proceed, not just a stylistic
+preference: rules should keep naming *content* ("mechanical, checkable, already-decided"),
+never *pace* ("quickly," "as much as possible," "minimize cost").
+
+**What exp4 leaves genuinely open, and what exp5 should treat as its starting brief:**
+
+1. Every one-off result in this note (run 10's step-3 mechanism, run 12's self-correcting
+   chain) is n=1 on one instance — none has been repeated, and the two zero-delegation
+   successes (9, 11) show a forceful rule can simply never fire without necessarily
+   breaking anything, which means "success" alone doesn't validate a delegation rule.
+2. Delegation's share of total token spend has never exceeded ~7% of a run's cost, even
+   on the day's best result. exp5's "look into token saving" needs to treat this as the
+   actual open question — not "does delegation happen" but "can it happen at a volume
+   large enough to matter to total cost" — which likely means prompt rules that shift
+   more than one or two bounded pieces of work per run, and/or a task shape where more
+   of the work is genuinely delegable in the first place (see item 6 under Next).
+3. The three prompt layers now live (`role.md` twice-rewritten, the step-3 rule, the
+   content-based default) have never been tested apart from each other. exp5 should
+   start from a clean, single-layer baseline per condition, not by continuing to stack
+   changes on top of exp4's end state.
