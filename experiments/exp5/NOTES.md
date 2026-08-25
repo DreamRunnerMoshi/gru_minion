@@ -140,6 +140,21 @@ the delegation-volume side of exp5's goal is achievable with the current prompt;
 cache-hit-rate question is about squeezing more efficiency out of whatever volume
 happens, and remains open regardless of how this first question resolves.
 
+**Methodological note: token share, not `$` share, is the metric to trust across runs.**
+Already visible in this project's own logs, same day, same two models, same provider:
+`cost_context.py`'s live-pricing lookup told Gru *"the minion costs roughly 20x to 30x
+less per token"* for runs 8-11, and *"roughly 9x to 15x less"* for run 12 and both exp5
+runs — OpenRouter's real per-token pricing for `deepseek-v4-pro`/`deepseek-v4-flash`
+moved on its own, hours apart, with nothing on our side changing. A `$`-based comparison
+between runs from different points in the day is partly measuring the market, not just
+the architecture — and that only gets worse across different models or providers, where
+pricing structures aren't even comparable in shape. Token counts don't have this
+problem: they measure the actual computational work distributed between Gru and the
+minion, independent of whatever a provider charges for it that hour. Going forward,
+**minion's share of total tokens is the primary metric** for whether exp5's goal is
+being met; `$` stays a useful secondary number for absolute-cost awareness, not the
+axis for comparing runs against each other.
+
 **But the anomaly pattern this run's own data shows did not improve.** Gru's own
 session: 7 of 23 calls (30.4%) came in under 70% cache hit rate — a *higher* anomaly
 rate than run 10's un-fixed baseline (10 of 41, 24.4%) — and overall cache hit rate
