@@ -129,11 +129,12 @@ Fragments live under `orchestrator/prompts/gru/`, grouped by topic:
 | Fragment | Contains |
 |---|---|
 | `role.md` | Who Gru is, the accuracy/cost objective, that a minion exists and can be trusted. |
-| `task_approach.md` | Boundaries (modify source, not tests/config, unless asked) + "Recommended Workflow" (analyze → repro script → edit → verify → edge cases — verbatim from the stock SWE-bench prompt, tenth change). |
+| `task_approach.md` | Boundaries (modify source, not tests/config, unless asked) + "Recommended Workflow" (analyze → repro script → edit → verify → edge cases — verbatim from the stock SWE-bench prompt, tenth change), including the seventeenth change's step-3 delegation rule. |
 | `actions.md` | The full "Your actions" list (all four actions) and "Exactly one action per turn." |
-| `delegation_and_verification.md` | `returns`/`mode` mechanics for shaping a delegation, plus "Authoring final_verification" guidance. |
+| `delegation.md` | `returns`/`mode` mechanics for shaping a delegation, plus "What comes back" (the fourteenth change's verdict-summary contract). |
+| `verification.md` | "Authoring final_verification" guidance — building a check without access to the hidden grading tests. |
 
-All four are always included — `gru.yaml` is the only config, so there's no picking-a-subset step anymore. `orchestrator/gru_config.load_gru_config('gru.yaml')` resolves `agent.system_template_fragments` into the composed prompt string; `run_gru_session.py` and `tests/harness.py` both call it instead of a plain `yaml.safe_load`.
+Split from one `delegation_and_verification.md` into `delegation.md` + `verification.md` on 2026-08-24 (eighteenth change) — two distinct topics (shaping/receiving delegated work vs. Gru's own finish-time verification) that had been merged into one file since the eleventh change's consolidation; composed output unchanged, `gru.yaml`'s fragment list updated to match. All five are always included — `gru.yaml` is the only config, so there's no picking-a-subset step anymore. `orchestrator/gru_config.load_gru_config('gru.yaml')` resolves `agent.system_template_fragments` into the composed prompt string; `run_gru_session.py` and `tests/harness.py` both call it instead of a plain `yaml.safe_load`.
 
 `tool_policy` (`allow_think`, `allow_run_check`, `allow_verdict`, `require_finish_verification` — see the second 2026-08-24 revision note above) still exists in `orchestrator/gru_toolcall.ToolPolicy` and still works, independently of the fragment consolidation — it shapes the actual tool schemas/validation, not prompt text. `gru.yaml` doesn't set it, so it's at its fully-permissive default; nothing currently exercises the restrictive path, but it's there if a narrower session is wanted again.
 
