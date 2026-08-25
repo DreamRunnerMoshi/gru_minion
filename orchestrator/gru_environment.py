@@ -44,6 +44,14 @@ attribute this to sticky-routing drift: without an explicit session_id, the rout
 is derived by hashing the opening messages, and a growing agent conversation changes that
 hash turn to turn, occasionally landing a request on a different backend than the one
 holding the warm cache. See run_gru_session.py's matching note and experiments/exp5/NOTES.md.
+
+Revised 2026-08-25 (exp5, again): `_run_agentic` now constructs `MinionModel`
+(orchestrator/minion_model.py), not mini-swe-agent's bare `LitellmModel` — same class,
+except cost tracking prefers the response's own real reported cost over litellm's
+static-registry calculator. Caught live, mid-batch: `--minion-cost-limit` was silently
+a no-op for `openrouter/qwen/qwen3-max` (real cost $0.0017/call, tracked cost $0.0) —
+see orchestrator/real_cost.py for the full story and gru_model.py's matching fix on
+Gru's own side.
 """
 
 import logging
@@ -55,9 +63,9 @@ import litellm
 from minisweagent.agents.default import DefaultAgent
 from minisweagent.environments.docker import DockerEnvironment
 from minisweagent.exceptions import Submitted
-from minisweagent.models.litellm_model import LitellmModel
 
 from orchestrator.cache_stats import extract_cache_stats
+from orchestrator.minion_model import MinionModel
 from orchestrator.token_usage import extract_token_usage
 
 _VERDICT_SUMMARY_MARKER = "===PATCH==="
@@ -259,7 +267,7 @@ class GruEnvironment:
                 "extra_body": {"session_id": f"minion-{self.run_id}-{delegation_id}"},
             },
         }
-        minion_model = LitellmModel(**minion_model_kwargs)
+        minion_model = MinionModel(**minion_model_kwargs)
         minion_output_path = None
         if self.output_dir is not None:
             minion_output_path = self.output_dir / "minions" / f"{delegation_id}.traj.json"

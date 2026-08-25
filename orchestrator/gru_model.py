@@ -9,6 +9,12 @@ it correctly, but tests/harness.py's separate GruModel construction silently did
 so a naive test would have shown Gru's own calls with no session_id at all. Owning it
 here means any caller gets consistent behavior for free. See gru_environment.py's
 matching note for why session_id exists (OpenRouter sticky-routing, exp4's cache data).
+
+Revised 2026-08-25 (exp5 start, again): `_calculate_cost` now prefers the response's
+own real reported cost (`orchestrator.real_cost`) over LitellmModel's own calculator,
+which prices from a static registry that doesn't know every model — caught live when
+`openrouter/qwen/qwen3-max`'s real $0.0017/call was silently tracked as $0.0, making
+`--cost-limit` a no-op. See real_cost.py for the full story.
 """
 
 import litellm
@@ -17,6 +23,7 @@ from minisweagent.exceptions import FormatError
 from minisweagent.models.litellm_model import LitellmModel
 
 from orchestrator.gru_toolcall import ToolPolicy, build_tools, format_gru_observation_messages, parse_gru_actions
+from orchestrator.real_cost import real_completion_cost
 
 
 class GruModel(LitellmModel):
@@ -51,6 +58,12 @@ class GruModel(LitellmModel):
         except litellm.exceptions.AuthenticationError as e:
             e.message += " You can permanently set your API key with `mini-extra config set KEY VALUE`."
             raise e
+
+    def _calculate_cost(self, response) -> dict[str, float]:
+        real_cost = real_completion_cost(response)
+        if real_cost is not None:
+            return {"cost": real_cost}
+        return super()._calculate_cost(response)
 
     def _parse_actions(self, response) -> list[dict]:
         tool_calls = response.choices[0].message.tool_calls or []
