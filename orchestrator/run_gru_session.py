@@ -19,6 +19,16 @@ construction. `--api-base` is now optional: self-hosted Ollama needs it (point a
 serving instance); a hosted-API model (e.g. `openrouter/...`, routed by litellm via an
 API key env var, not a custom endpoint) doesn't.
 
+Revised 2026-08-25 (exp5 start): every call now carries an OpenRouter `session_id`
+(via `extra_body`) — one per Gru session, one per minion delegation. Diagnosed from
+exp4's cost data: real, provider-reported `cached_tokens` showed a handful of calls per
+run (up to 10 of 41) with near-0% cache hit despite a warm cache existing moments
+earlier, uncorrelated with wall-clock gaps between calls. OpenRouter's own docs explain
+why: without an explicit `session_id`, sticky routing is derived by hashing the opening
+messages, and any drift there (which a growing agent conversation causes constantly)
+can land a request on a different backend replica than the one holding the cache. This
+is a routing fix, not a prompt-content fix — see experiments/exp5/NOTES.md.
+
 Usage:
     # self-hosted, one model both roles (original Phase 1 usage):
     python -m orchestrator.run_gru_session \\
@@ -41,6 +51,7 @@ import logging
 import os
 import sys
 import time
+import uuid
 from pathlib import Path
 
 import yaml
@@ -87,6 +98,24 @@ def main() -> None:
     parser.add_argument("--api-base", help="Ollama/OpenAI-compatible API base URL — needed for self-hosted serving, not for a hosted-API model routed by litellm's provider prefix (e.g. openrouter/...)")
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--gru-config", default="gru.yaml", help="Config filename under orchestrator/config/ for Gru's prompt (for A/B comparisons against an alternate prompt)")
+    parser.add_argument(
+        "--cost-limit",
+        type=float,
+        default=0.0,
+        help="Hard dollar cap on Gru's own session (mini-swe-agent's own enforcement, raises LimitsExceeded and "
+        "stops the session — real, not advisory). 0 (default) leaves the config's own cost_limit as-is. Does not "
+        "cap the minion — see --minion-cost-limit for that.",
+    )
+    parser.add_argument(
+        "--minion-cost-limit",
+        type=float,
+        default=0.0,
+        help="Hard dollar cap on each individual delegation's own agentic-mode session (same mini-swe-agent "
+        "enforcement as --cost-limit, applied per delegation, not summed across a session's delegations — exp5's "
+        "run 3 showed the minion can end up costing more in aggregate than Gru, and nothing currently caps the "
+        "running total across delegations in one Gru session, only each delegation's own spend and Gru's own "
+        "step_limit on how many it can issue). 0 (default) leaves minion.yaml's own cost_limit as-is.",
+    )
     args = parser.parse_args()
 
     gru_model_name = args.gru_model or args.model
@@ -106,6 +135,12 @@ def main() -> None:
     logger.info(f"Using Gru config: {args.gru_config}")
     minion_config = load_yaml(CONFIG_DIR / "minion.yaml")
 
+    # OpenRouter sticky-routing key — unique per run (not just per instance, since the
+    # same instance is re-run repeatedly across a day) so two runs never share a pin.
+    # See this file's 2026-08-25 revision note.
+    run_id = f"{args.instance}-{uuid.uuid4().hex[:8]}"
+    logger.info(f"Run session id: {run_id}")
+
     logger.info("Starting shared testbed container")
     docker_env = get_sb_environment(session_config, instance)
 
@@ -114,6 +149,7 @@ def main() -> None:
             model_name=gru_model_name,
             model_kwargs={**gru_config["model"]["model_kwargs"], **({"api_base": args.api_base} if args.api_base else {})},
             policy=gru_config["tool_policy"],
+            run_id=run_id,
         )
         minion_model_kwargs = {
             "model_name": minion_model_name,
@@ -122,6 +158,8 @@ def main() -> None:
         minion_agent_kwargs = {
             k: v for k, v in minion_config["agent"].items() if k not in ("system_template", "instance_template")
         }
+        if args.minion_cost_limit > 0:
+            minion_agent_kwargs["cost_limit"] = args.minion_cost_limit
 
         gru_env = GruEnvironment(
             docker_env=docker_env,
@@ -131,11 +169,14 @@ def main() -> None:
             minion_instance_template=minion_config["agent"]["instance_template"],
             output_dir=args.output_dir,
             logger=logging.getLogger("gru.environment"),
+            run_id=run_id,
         )
 
         gru_agent_kwargs = {
             k: v for k, v in gru_config["agent"].items() if k not in ("system_template", "instance_template")
         }
+        if args.cost_limit > 0:
+            gru_agent_kwargs["cost_limit"] = args.cost_limit
         gru_agent = DefaultAgent(
             gru_model,
             gru_env,
@@ -182,9 +223,12 @@ def main() -> None:
         # working tree — pull it via git diff directly rather than losing it. Found
         # the hard way: a run where every delegation succeeded still produced a
         # 0-char patch because Gru never phrased a valid finish() call.
+        # Revised 2026-08-25 (exp5): diffs against gru_env.initial_commit, not a bare
+        # `git diff` — see GruEnvironment._finish()'s matching note for why a bare
+        # `git diff` misses anything Gru or a minion committed along the way.
         if not patch and exit_status != "Submitted":
             logger.warning(f"Session ended via {exit_status!r}, not Submitted — falling back to git diff on the shared testbed")
-            fallback_diff = docker_env.execute({"command": "git diff"})
+            fallback_diff = docker_env.execute({"command": f"git diff {gru_env.initial_commit}"})
             patch = fallback_diff.get("output", "")
             logger.info(f"Fallback git diff recovered {len(patch)} chars")
         # Whether Gru's own self-authored final_verification (necessarily blind to the

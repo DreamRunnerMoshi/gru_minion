@@ -1,0 +1,27 @@
+The `_separable` function in `separable.py` orchestrates the computation of separability for compound models by recursively processing nested structures and applying appropriate operator functions. Here's a detailed breakdown of its logic, especially concerning the '&' (concatenate) operations and nested compound models:
+
+1. **Entry Point and Early Return**:
+   - When `_separable` is called with a `transform`, it first checks if the transform has a custom `_calculate_separability_matrix()` method that returns a valid result (not `NotImplemented`). If so, it directly returns that result.
+   - If the transform is a `CompoundModel`, it proceeds to recursively evaluate the separability of its left and right sub-models (`transform.left` and `transform.right`) using `_separable` again.
+   - For simple `Model` instances (non-compound), it calls `_coord_matrix` to generate a coordinate matrix representing the model's behavior.
+
+2. **Handling Compound Models**:
+   - For `CompoundModel` instances, the function extracts the separability results of both the left and right components via recursive calls to `_separable`.
+   - It then uses the `transform.op` attribute (e.g., `'&'`, `'|'`) to index into the global `_operators` dictionary, which maps operators to their respective handler functions (`_cstack`, `_cdot`, etc.).
+   - These functions are responsible for combining the separability matrices of the left and right sub-models according to the operation semantics:
+     - `_cstack` handles the `'&'` operator by horizontally stacking the coordinate matrices of the left and right models.
+     - `_cdot` handles the `'|'` operator by performing a dot product of the coordinate matrices.
+     - Arithmetic operators like `+`, `-`, `*`, `/`, `**` are handled by `_arith_oper`, which returns a matrix indicating non-separability.
+
+3. **Role of `_cstack` in '&' Operations**:
+   - The `_cstack` function is specifically invoked when the operator is `'&'`.
+   - It computes the total number of outputs (`noutp`) for the combined model using `_compute_n_outputs`.
+   - It generates coordinate matrices for both left and right models using `_coord_matrix`, ensuring they're positioned correctly within the larger matrix structure.
+   - It combines these matrices horizontally (`np.hstack`) to produce the final separability matrix for the concatenated operation.
+   - The resulting matrix accurately reflects how inputs map to outputs in the stacked configuration, preserving the independence relationships defined by each component model.
+
+4. **Recursive Nesting**:
+   - The recursion ensures that deeply nested compound models are processed level-by-level.
+   - At each step, the function evaluates the contribution of each sub-model to the overall separability, allowing complex expressions involving multiple nested `'&'` and `'|'` operations to be analyzed correctly.
+
+In summary, `_separable` leverages recursion to traverse compound models and applies operator-specific functions to combine intermediate results, effectively determining whether each output of a model is independent (separable) based on its structural composition. The `_cstack` function plays a crucial role in handling `'&'` operations by properly aligning and merging coordinate representations from constituent models.

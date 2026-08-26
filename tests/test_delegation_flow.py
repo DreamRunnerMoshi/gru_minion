@@ -84,6 +84,61 @@ def test_verdict_delegation_shows_gru_the_summary_but_not_the_raw_patch(tmp_path
     assert "UNIQUE_PATCH_BODY_77" not in transcript
 
 
+def test_openrouter_session_id_is_stable_per_conversation_distinct_per_delegation(tmp_path):
+    """2026-08-25 (exp5 start): every call carries extra_body.session_id for OpenRouter
+    sticky routing — one id for Gru's whole session, a distinct one per delegation (each
+    delegation is its own conversation with its own prefix, not a continuation of Gru's
+    or of any other delegation's). See orchestrator/gru_environment.py's matching
+    2026-08-25 revision note for why this exists."""
+    delegate_one = Tool(
+        "delegate_to_minion",
+        {
+            "description": "Replace 'foo' with 'FIXED' in README.md.",
+            "returns": "verdict",
+            "mode": "agentic",
+            "inputs": {"scope": "README.md only"},
+            "output_contract": "confirm the edit is done",
+            "verification": {"checks": ["grep -q FIXED README.md"]},
+        },
+    )
+    delegate_two = Tool(
+        "delegate_to_minion",
+        {
+            "description": "Summarize README.md.",
+            "returns": "findings",
+            "mode": "oneshot",
+            "inputs": {"scope": "README.md", "read_paths": ["README.md"]},
+            "output_contract": "one sentence",
+        },
+    )
+    steps = [
+        delegate_one,
+        bash("python3 -c \"import pathlib; p = pathlib.Path('README.md'); p.write_text(p.read_text().replace('foo', 'FIXED'))\""),
+        submit("echo edited"),
+        delegate_two,
+        Text("The file marks this build as fixed."),
+        Tool("finish", {"summary": "fixed", "final_verification": {"checks": ["grep -q FIXED README.md"]}}),
+    ]
+    session = run_session(tmp_path=tmp_path, steps=steps, repo_files={"README.md": "foo\n"})
+
+    assert session.result["exit_status"] == "Submitted"
+
+    def session_ids_for(model_substring: str) -> set[str]:
+        return {
+            call["kwargs"]["extra_body"]["session_id"]
+            for call in session.llm.calls
+            if model_substring in call["model"]
+        }
+
+    gru_ids = session_ids_for("mock/gru")
+    minion_ids = session_ids_for("mock/minion")
+
+    # Gru's own turns all share one session_id...
+    assert gru_ids == {"gru-test-session"}
+    # ...and each delegation gets its own, distinct from Gru's and from each other's.
+    assert minion_ids == {"minion-test-session-t1", "minion-test-session-t2"}
+
+
 def test_agentic_delegation_that_fails_its_check_is_routine_not_fatal(tmp_path):
     """A delegation's check failing must not end the session — prompts/gru-loop.md's
     'On failure' section: routine, Gru keeps working. Here Gru retries with a corrected

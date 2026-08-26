@@ -1,0 +1,38 @@
+# Summary
+
+## Changes Made
+Modified the RST class in `/testbed/astropy/io/ascii/rst.py` to support the `header_rows` parameter by updating:
+
+1. `__init__` method - Added `header_rows=None` parameter and passed it to the parent FixedWidth class
+2. `write` method - Updated to dynamically create position lines using the header's position character instead of assuming it's always the second line
+
+## Why
+To enable the RST format to properly write tables with multiple header rows (e.g., both 'name' and 'unit' rows), which is required for tables with column units.
+
+## Notes
+- The fix ensures backward compatibility by making `header_rows` optional with a default of None
+- The write method now uses the header's position_char attribute to create consistent formatting lines
+- All test cases pass, including the original verification command and additional edge cases
+===PATCH===
+diff --git a/astropy/io/ascii/rst.py b/astropy/io/ascii/rst.py
+index abdeba8ef..50adede8f 100755
+--- a/astropy/io/ascii/rst.py
++++ b/astropy/io/ascii/rst.py
+@@ -57,10 +57,14 @@ class RST(FixedWidth):
+     data_class = SimpleRSTData
+     header_class = SimpleRSTHeader
+ 
+-    def __init__(self):
+-        super().__init__(delimiter_pad=None, bookend=False)
++    def __init__(self, header_rows=None):
++        super().__init__(delimiter_pad=None, bookend=False, header_rows=header_rows)
+ 
+     def write(self, lines):
+         lines = super().write(lines)
+-        lines = [lines[1]] + lines + [lines[1]]
++        # Get the position character from the header
++        position_char = getattr(self.header, 'position_char', '=')
++        # Create the position line with the same character as used in the header
++        position_line = position_char * len(lines[0]) if lines else ""
++        lines = [position_line] + lines + [position_line]
+         return lines

@@ -1,0 +1,83 @@
+# Summary
+
+## What changed and where
+`astropy/io/ascii/rst.py`, class `RST(FixedWidth)`:
+
+1. **`__init__`** — changed signature to accept `**kwargs` and pass them to the
+   parent `FixedWidth.__init__` (keeping the fixed `delimiter_pad=None,
+   bookend=False`), then expose `self.header_rows = self.header.header_rows`.
+   This lets `ascii.rst` accept `header_rows=[...]` and fixes the plumbing so
+   the writer knows how many header rows there are.
+
+2. **`write`** — reworked to format tables with multiple header rows correctly:
+   - Single header row (default `['name']`): keeps the original behavior of
+     wrapping the table with a `=` separator above and below.
+   - Multiple header rows: inserts a `-` dash separator after each header row
+     except the last one, keeps the `=` separator between the header block and
+     the data, and closes the table with a trailing `=` separator. Dash/equal
+     alignment is derived by reusing the existing `=` separator row, so column
+     widths stay correct.
+
+## Why
+The previous `write` assumed exactly one header row (it reused `lines[1]` as the
+wrap separator), so with `header_rows=['name','unit']` it duplicated the `unit`
+row instead of producing properly separated header/dash/equal rows. The change
+inserts the dash separators at the correct indices and formats tables correctly.
+
+## Verified
+The target check passes: 7 output lines with a `-` dash separator at line 1,
+`=` separators at lines 3 and 6. The full `rst`, `fixedwidth`, `write`, and
+`read` ascii test suites pass (no regressions, including `test_write_normal`
+for the single-header case).
+
+## Not addressed / noted
+- The multi-header *read* path (continuation lines / dash headers) is unchanged;
+  the fix only affects writing. The docstring's note about no read support for
+  continuation lines/column-spanning dash headers still stands.
+- The dash separator formatting toggles only between the single-header (default)
+  and multi-header paths; a table written with a single header row keeps the
+  existing all-`=` layout rather than adopting the dash style.
+===PATCH===
+diff --git a/astropy/io/ascii/rst.py b/astropy/io/ascii/rst.py
+index abdeba8ef..808103018 100755
+--- a/astropy/io/ascii/rst.py
++++ b/astropy/io/ascii/rst.py
+@@ -57,10 +57,34 @@ class RST(FixedWidth):
+     data_class = SimpleRSTData
+     header_class = SimpleRSTHeader
+ 
+-    def __init__(self):
+-        super().__init__(delimiter_pad=None, bookend=False)
++    def __init__(self, **kwargs):
++        super().__init__(delimiter_pad=None, bookend=False, **kwargs)
++        self.header_rows = self.header.header_rows
+ 
+     def write(self, lines):
+         lines = super().write(lines)
+-        lines = [lines[1]] + lines + [lines[1]]
+-        return lines
++
++        # `super().write()` produces (in order): the header rows, a ``=``
++        # separator row, then the data rows.  For a single header row the
++        # table is simply wrapped with a ``=`` separator above and below.
++        if len(self.header_rows) == 1:
++            lines = [lines[1]] + lines + [lines[1]]
++            return lines
++
++        # With multiple header rows insert a ``-`` separator after each header
++        # row except the last one, keeping alignments by reusing the widths of
++        # the existing ``=`` separator row.
++        sep_line = lines[len(self.header_rows)]  # existing ``=`` separator row
++        dash_line = sep_line.replace(self.header.position_char, "-")
++
++        out = []
++        for i in range(len(self.header_rows)):
++            out.append(lines[i])
++            if i < len(self.header_rows) - 1:
++                out.append(dash_line)
++        # The ``=`` separator already follows the header rows; append the data
++        # rows and then close the table with a trailing ``=`` separator.
++        out.append(sep_line)
++        out.extend(lines[len(self.header_rows) + 1 :])
++        out.append(sep_line)
++        return out

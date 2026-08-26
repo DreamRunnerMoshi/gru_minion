@@ -37,6 +37,39 @@ def test_run_check_can_write_to_the_repo(tmp_path):
     assert (session.repo / "README.md").read_text().strip() == "bar"
 
 
+def test_finish_captures_the_patch_even_if_gru_committed_it(tmp_path):
+    """2026-08-25 (exp5): caught live against openai/gpt-5-mini — every one of five solo
+    runs `git commit`ed its own fix as a normal part of its workflow. finish() used to
+    read a bare `git diff` (working tree only), which shows nothing once a change is
+    committed — Gru's own final_verification still passed (the real fix was genuinely in
+    the repo), so it submitted believing it had a real patch, and the harness silently
+    recorded an empty one. All five were reported as real SWE-bench failures that were
+    actually a patch-extraction bug; the containers were already gone by the time this was
+    noticed, so the real patches were unrecoverable. finish() now diffs against the commit
+    captured at session start (GruEnvironment.initial_commit), which sees committed and
+    uncommitted changes alike."""
+    steps = [
+        Tool(
+            "run_check",
+            {
+                "checks": [
+                    "python3 -c \"import pathlib; p = pathlib.Path('README.md'); p.write_text(p.read_text().replace('foo', 'bar'))\" "
+                    "&& git add -A && git commit -m 'fix' -q"
+                ]
+            },
+        ),
+        _finish(),
+    ]
+    session = run_session(tmp_path=tmp_path, steps=steps, repo_files={"README.md": "foo\n"})
+
+    assert session.result["exit_status"] == "Submitted"
+    assert (session.repo / "README.md").read_text().strip() == "bar"
+    # The whole point: the patch itself must show the change, not come back empty just
+    # because it's sitting in a commit instead of the working tree.
+    assert "-foo" in session.result["submission"]
+    assert "+bar" in session.result["submission"]
+
+
 def test_run_check_executes_read_only_commands(tmp_path):
     steps = [
         Tool("run_check", {"checks": ["grep -c needle README.md"]}),

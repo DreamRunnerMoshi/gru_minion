@@ -1,0 +1,28 @@
+# Bug Fix Summary
+
+## What Changed and Where
+- **File**: astropy/io/fits/fitsrec.py
+- **Function**: FITS_rec class (around line 1264)
+- **Change**: Modified line 1264 from `output_field.replace(encode_ascii('E'), encode_ascii('D'))` to `output_field[:] = output_field.replace(encode_ascii('E'), encode_ascii('D'))`
+
+## Why
+The original code was not modifying the original array in-place - it was just creating a new string from the replace operation but not assigning it back to the array. Adding `[:] =` ensures the replacement is applied to the original array elements.
+
+## Notes
+- This is a straightforward fix for array assignment behavior
+- The change affects how floating point numbers with 'D' format are processed in FITS files
+- No other related issues were identified or addressed in this scope
+===PATCH===
+diff --git a/astropy/io/fits/fitsrec.py b/astropy/io/fits/fitsrec.py
+index 574b4073b..8890e158e 100755
+--- a/astropy/io/fits/fitsrec.py
++++ b/astropy/io/fits/fitsrec.py
+@@ -1261,7 +1261,7 @@ class FITS_rec(np.recarray):
+ 
+         # Replace exponent separator in floating point numbers
+         if 'D' in format:
+-            output_field.replace(encode_ascii('E'), encode_ascii('D'))
++            output_field[:] = output_field.replace(encode_ascii('E'), encode_ascii('D'))
+ 
+ 
+ def _get_recarray_field(array, key):

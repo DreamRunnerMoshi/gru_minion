@@ -1,0 +1,254 @@
+# Test Script to Reproduce header_rows Issue with RST Format
+
+## Summary
+
+The RST format in astropy does not support the `header_rows` parameter, even though it inherits from the `FixedWidth` class which does support this functionality. This is a bug in the RST class implementation.
+
+## Issue Details
+
+The RST class (`/testbed/astropy/io/ascii/rst.py`) inherits from `FixedWidth` but overrides the `__init__` method without properly exposing the `header_rows` parameter:
+
+```python
+class RST(FixedWidth):
+    def __init__(self):
+        super().__init__(delimiter_pad=None, bookend=False)
+```
+
+The `header_rows` parameter is not passed through to the parent class, causing a `TypeError` when users try to use it.
+
+## Test Script
+
+The following test script reproduces the issue:
+```python
+#!/usr/bin/env python3
+"""
+Simple test script to reproduce header_rows issue with RST format
+
+This demonstrates the core issue: RST format doesn't support header_rows parameter
+even though it inherits from FixedWidth which does.
+"""
+
+from astropy.io import ascii
+from io import StringIO
+import traceback
+
+def test_fixed_width_with_header_rows():
+    """Test that fixed_width format supports header_rows (baseline test)"""
+    print("=== Testing fixed_width with header_rows (should work) ===")
+    
+    # Use the exact test from the fixedwidth test file
+    tbl = [
+        "| int16 | float32 |      <U3 | int64 |",
+        "|     a |       b |        c |     d |",
+        "|     m |         |          | m / s |",
+        "|       |     .2f |          |       |",
+        "|       |         | C column |       |",
+        "|     1 |    1.00 |        c |     4 |",
+        "|     2 |    2.00 |        d |     5 |",
+        "|     3 |    3.00 |        e |     6 |",
+    ]
+    header_rows = ["dtype", "name", "unit", "format", "description"]
+    
+    try:
+        dat = ascii.read(tbl, format="fixed_width", delimiter="|", header_rows=header_rows)
+        print("✓ SUCCESS: FixedWidth supports header_rows")
+        print(f"Column names: {dat.colnames}")
+        print(f"Data: {dat}")
+        return True
+    except Exception as e:
+        print(f"✗ FAILED: FixedWidth should support header_rows: {e}")
+        traceback.print_exc()
+        return False
+
+def test_rst_with_header_rows():
+    """Test that rst format does NOT support header_rows (this demonstrates the bug)"""
+    print("\n=== Testing RST with header_rows (should fail - this is the bug) ===")
+    
+    # Similar structure but in RST format
+    rst_table = """
+==== ===== ====== ====== ========
+int16  float32   <U3    int64     
+     a        b       c       d
+     m             m / s      
+       .2f              
+       C column           
+==== ===== ====== ====== ========
+     1     1.00      c       4
+     2     2.00      d       5
+     3     3.00      e       6
+==== ===== ====== ====== ========
+"""
+    header_rows = ["dtype", "name", "unit", "format", "description"]
+    
+    try:
+        dat = ascii.read(rst_table, format="rst", header_rows=header_rows)
+        print("✗ UNEXPECTED: RST should NOT support header_rows yet")
+        print(f"Column names: {dat.colnames}")
+        return False
+    except TypeError as e:
+        if "unexpected keyword argument 'header_rows'" in str(e):
+            print("✓ EXPECTED FAILURE: RST doesn't support header_rows (this is the bug)")
+            print(f"Error: {e}")
+            return True
+        else:
+            print(f"✗ UNEXPECTED ERROR: {e}")
+            traceback.print_exc()
+            return False
+    except Exception as e:
+        print(f"✗ UNEXPECTED ERROR: {e}")
+        traceback.print_exc()
+        return False
+
+def test_rst_without_header_rows():
+    """Test that rst format works without header_rows (baseline)"""
+    print("\n=== Testing RST without header_rows (should work) ===")
+    
+    rst_table = """
+==== ===== ======
+Col1  Col2  Col3
+==== ===== ======
+  1    1.2  Hello
+  2    2.4  World
+==== ===== ======
+"""
+    
+    try:
+        dat = ascii.read(rst_table, format="rst")
+        print("✓ SUCCESS: RST works without header_rows")
+        print(f"Column names: {dat.colnames}")
+        print(f"Data: {dat}")
+        return True
+    except Exception as e:
+        print(f"✗ FAILED: RST should work without header_rows: {e}")
+        traceback.print_exc()
+        return False
+
+def main():
+    print("Testing header_rows functionality with RST format")
+    print("=" * 60)
+    print("This demonstrates the bug: RST doesn't support header_rows")
+    print("even though it inherits from FixedWidth which does.")
+    print("=" * 60)
+    
+    # Test that fixed_width works (baseline)
+    fw_works = test_fixed_width_with_header_rows()
+    
+    # Test that rst fails (demonstrates the bug)
+    rst_fails_as_expected = test_rst_with_header_rows()
+    
+    # Test that rst works without header_rows
+    rst_works_without = test_rst_without_header_rows()
+    
+    print("\n" + "=" * 60)
+    print("SUMMARY:")
+    print(f"✓ FixedWidth supports header_rows: {fw_works}")
+    print(f"✓ RST fails with header_rows (bug): {rst_fails_as_expected}")
+    print(f"✓ RST works without header_rows: {rst_works_without}")
+    
+    if fw_works and rst_fails_as_expected and rst_works_without:
+        print("\n🐛 BUG CONFIRMED: RST format does not support header_rows parameter")
+        print("   even though it inherits from FixedWidth which does support it.")
+        print("   The RST class.__init__() method should be updated to accept header_rows.")
+        return True
+    else:
+        print("\n❓ Unexpected test results")
+        return False
+
+if __name__ == "__main__":
+    success = main()
+    exit(0 if success else 1)
+```
+
+
+## Test Results
+
+Running the script produces the following output:
+
+```
+Testing header_rows functionality with RST format
+============================================================
+This demonstrates the bug: RST doesn't support header_rows
+even though it inherits from FixedWidth which does.
+============================================================
+=== Testing fixed_width with header_rows (should work) ===
+✓ SUCCESS: FixedWidth supports header_rows
+Column names: ['a', 'b', 'c', 'd']
+Data:  a   b    c    d  
+ m           m / s
+--- ---- --- -----
+  1 1.00   c     4
+  2 2.00   d     5
+  3 3.00   e     6
+
+=== Testing RST with header_rows (should fail - this is the bug) ===
+✓ EXPECTED FAILURE: RST doesn't support header_rows (this is the bug)
+Error: __init__() got an unexpected keyword argument 'header_rows'
+
+=== Testing RST without header_rows (should work) ===
+✓ SUCCESS: RST works without header_rows
+Column names: ['Col1', 'Col2', 'Col3']
+Data: Col1 Col2  Col3
+---- ---- -----
+   1  1.2 Hello
+   2  2.4 World
+
+============================================================
+SUMMARY:
+✓ FixedWidth supports header_rows: True
+✓ RST fails with header_rows (bug): True
+✓ RST works without header_rows: True
+
+🐛 BUG CONFIRMED: RST format does not support header_rows parameter
+   even though it inherits from FixedWidth which does support it.
+   The RST class.__init__() method should be updated to accept header_rows.
+```
+
+## Root Cause Analysis
+
+The issue is in `/testbed/astropy/io/ascii/rst.py` lines 44-48:
+
+```python
+class RST(FixedWidth):
+    """reStructuredText simple format table."""
+    _format_name = "rst"
+    _description = "reStructuredText simple table"
+    data_class = SimpleRSTData
+    header_class = SimpleRSTHeader
+
+    def __init__(self):
+        super().__init__(delimiter_pad=None, bookend=False)
+```
+
+The `__init__` method only passes `delimiter_pad` and `bookend` to the parent class, but does not pass through the `header_rows` parameter that FixedWidth supports.
+
+## Expected Behavior
+
+The RST format should support the `header_rows` parameter just like FixedWidth does, allowing users to parse complex RST tables with multiple header lines containing different types of information (dtype, name, unit, format, description, etc.).
+
+## Files Involved
+
+- `/testbed/astropy/io/ascii/rst.py` - Contains the buggy RST class
+- `/testbed/astropy/io/ascii/fixedwidth.py` - Contains the working FixedWidth class that RST inherits from
+- `/testbed/astropy/io/ascii/tests/test_rst.py` - Current RST tests (missing header_rows tests)
+- `/testbed/astropy/io/ascii/tests/test_fixedwidth.py` - Contains working header_rows tests for FixedWidth
+
+## Commands Used
+
+```bash
+# Create test script
+cat > /testbed/test_rst_header_rows_simple.py << 'EOF'
+[script content]
+EOF
+
+# Run test script
+cd /testbed && python test_rst_header_rows_simple.py
+```
+
+## Search Results
+
+The search revealed that:
+1. FixedWidth format has full header_rows support with comprehensive tests
+2. RST format has no header_rows support and no tests for it
+3. The RST class inherits from FixedWidth but doesn't expose the header_rows parameter
+4. No other ASCII format classes have this issue
+

@@ -1,0 +1,203 @@
+# RST Writer Class and FixedWidth header_rows Implementation
+
+## Summary
+
+The RST writer class (/testbed/astropy/io/ascii/rst.py) inherits from FixedWidth and uses a simplified header structure, while the FixedWidth class (/testbed/astropy/io/ascii/fixedwidth.py) implements a comprehensive header_rows mechanism that supports multiple header rows with different column attributes like dtype, name, unit, format, and description.
+
+## RST Writer Class Location
+
+**File**: `/testbed/astropy/io/ascii/rst.py`
+
+The RST writer class inherits from FixedWidth:
+
+```python
+class RST(FixedWidth):
+    """reStructuredText simple format table."""
+    
+    _format_name = "rst"
+    _description = "reStructuredText simple table"
+    data_class = SimpleRSTData
+    header_class = SimpleRSTHeader
+
+    def __init__(self):
+        super().__init__(delimiter_pad=None, bookend=False)
+```
+
+The RST writer uses simplified header and data classes that inherit from FixedWidth but override some behaviors for RST format requirements.
+
+## FixedWidth Class and header_rows Implementation
+
+**File**: `/testbed/astropy/io/ascii/fixedwidth.py`
+
+### Class Definition
+
+```python
+class FixedWidth(basic.Basic):
+    """Fixed width table with single header line defining column names and positions."""
+    
+    _format_name = "fixed_width"
+    _description = "Fixed width"
+
+    header_class = FixedWidthHeader
+    data_class = FixedWidthData
+
+    def __init__(
+        self,
+        col_starts=None,
+        col_ends=None,
+        delimiter_pad=" ",
+        bookend=True,
+        header_rows=None,
+    ):
+        if header_rows is None:
+            header_rows = ["name"]
+        super().__init__()
+        self.data.splitter.delimiter_pad = delimiter_pad
+        self.data.splitter.bookend = bookend
+        self.header.col_starts = col_starts
+        self.header.col_ends = col_ends
+        self.header.header_rows = header_rows
+        self.data.header_rows = header_rows
+        if self.data.start_line is None:
+            self.data.start_line = len(header_rows)
+```
+
+### header_rows in FixedWidthHeader (lines 97-168)
+
+The header_rows implementation in the FixedWidthHeader class:
+
+```python
+def get_cols(self, lines):
+    # ... initialization code ...
+    header_rows = getattr(self, "header_rows", ["name"])
+    
+    # Determine start_line and position_line
+    start_line = core._get_line_index(self.start_line, self.process_lines(lines))
+    position_line = core._get_line_index(
+        self.position_line, self.process_lines(lines)
+    )
+
+    # Handle different cases for header parsing
+    if start_line is None:
+        # No header line case
+        # ... auto-generate column names ...
+    else:
+        # Find the line with column names
+        line = self.get_line(lines, start_line + header_rows.index("name"))
+        self.names, starts, ends = self.get_fixedwidth_params(line)
+
+        # Set additional column attributes from header rows
+        for ii, attr in enumerate(header_rows):
+            if attr != "name":
+                line = self.get_line(lines, start_line + ii)
+                vals = self.get_fixedwidth_params(line)[0]
+                for col, val in zip(self.cols, vals):
+                    if val:
+                        setattr(col, attr, val)
+
+        # Set column start and end positions
+        for i, col in enumerate(self.cols):
+            col.start = starts[i]
+            col.end = ends[i]
+```
+
+### header_rows in FixedWidthData (lines 262-283)
+
+The header_rows implementation in the FixedWidthData class:
+
+```python
+def write(self, lines):
+    default_header_rows = [] if self.header.start_line is None else ["name"]
+    header_rows = getattr(self, "header_rows", default_header_rows)
+    
+    # Get data column widths
+    vals_list = []
+    col_str_iters = self.str_vals()
+    for vals in zip(*col_str_iters):
+        vals_list.append(vals)
+
+    # Get header column values for each header row attribute
+    hdrs_list = []
+    for col_attr in header_rows:
+        vals = [
+            "" if (val := getattr(col.info, col_attr)) is None else str(val)
+            for col in self.cols
+        ]
+        hdrs_list.append(vals)
+
+    # Calculate column widths incorporating both data and header
+    widths = [
+        max(len(vals[i_col]) for vals in vals_list)
+        for i_col in range(len(self.cols))
+    ]
+    if hdrs_list:
+        for i_col in range(len(self.cols)):
+            widths[i_col] = max(
+                widths[i_col], max(len(vals[i_col]) for vals in hdrs_list)
+            )
+
+    # Write header lines
+    for vals in hdrs_list:
+        lines.append(self.splitter.join(vals, widths))
+
+    # Write position line if needed
+    if self.header.position_line is not None:
+        vals = [self.header.position_char * width for width in widths]
+        lines.append(self.splitter.join(vals, widths))
+
+    # Write data lines
+    for vals in vals_list:
+        lines.append(self.splitter.join(vals, widths))
+```
+
+## Test Examples
+
+From `/testbed/astropy/io/ascii/tests/test_fixedwidth.py`:
+
+### Single header row with multiple attributes (lines 564-579):
+
+```python
+def test_fixed_width_header_rows():
+    tbl = [
+        "| int16 | float32 |      <U3 | int64 |",
+        "|     a |       b |        c |     d |",
+        "|     m |         |          | m / s |",
+        "|       |     .2f |          |       |",
+        "|       |         | C column |       |",
+        "|     1 |    1.00 |        c |     4 |",
+        "|     2 |    2.00 |        d |     5 |",
+        "|     3 |    3.00 |        e |     6 |",
+    ]
+    header_rows = ["dtype", "name", "unit", "format", "description"]
+    dat = ascii.read(tbl, format="fixed_width", delimiter="|", header_rows=header_rows)
+```
+
+### Two-line header with multiple attributes (lines 582-598):
+
+```python
+def test_fixed_width_two_line_header_rows():
+    tbl = [
+        "int32 float32      <U2 int64",
+        "    m                  m / s",
+        "          .2f               ",
+        "              C column      ",
+        "    a       b        c     d",
+        "----- ------- -------- -----",
+        "    1    1.00        c     4",
+        "    2    2.00        d     5",
+        "    3    3.00        e     6",
+    ]
+    header_rows = ["dtype", "unit", "format", "description", "name"]
+    dat = ascii.read(tbl, format="fixed_width_two_line", header_rows=header_rows)
+```
+
+## Key Implementation Details
+
+1. **header_rows is a list of strings** that specifies what each header row represents
+2. **Default**: If not specified, header_rows defaults to ["name"]
+3. **Column attributes**: Common attributes include "dtype", "name", "unit", "format", "description"
+4. **Reading**: The parser finds the line containing "name" in header_rows to determine column names, then processes other attributes from corresponding lines
+5. **Writing**: The writer extracts column attributes for each header row type and formats them appropriately
+6. **RST writer**: Inherits from FixedWidth but doesn't override header_rows behavior, using the default single name row
+
+The RST writer class inherits the header_rows functionality from FixedWidth but uses a simplified configuration with just the name row, which is appropriate for RST table format requirements.

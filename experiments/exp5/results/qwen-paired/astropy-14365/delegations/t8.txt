@@ -1,0 +1,43 @@
+Added comprehensive test for case-insensitive QDP command parsing to test_qdp.py
+The test verifies that QDP command parsing works correctly with lowercase, uppercase, and mixed case scenarios by testing the _line_type function directly.
+Note: The actual case-insensitive behavior was already implemented in the qdp.py file (the regex pattern already used re.IGNORECASE), but this test confirms and documents that behavior.
+===PATCH===
+diff --git a/astropy/io/ascii/tests/test_qdp.py b/astropy/io/ascii/tests/test_qdp.py
+index ef24e6f6a..62d1e7215 100755
+--- a/astropy/io/ascii/tests/test_qdp.py
++++ b/astropy/io/ascii/tests/test_qdp.py
+@@ -245,3 +245,34 @@ def test_get_lines_from_qdp(tmp_path):
+         assert file_output[i] == line
+         assert list_output[i] == line
+         assert text_output[i] == line
++
++
++
++def test_case_insensitive_commands():
++    """Test that QDP command parsing is case-insensitive."""
++    from astropy.io.ascii.qdp import _line_type
++    
++    # Test that command parsing is case insensitive
++    commands = [
++        "READ TERR 1",
++        "read terr 1", 
++        "Read Terr 1",
++        "READ serr 2",
++        "read SERR 2",
++        "ReAd SeRr 2"
++    ]
++    
++    # All should be recognized as commands
++    for cmd in commands:
++        result = _line_type(cmd)
++        assert result == "command", f"Failed to recognize command: {cmd}"
++        
++    # Test data lines still work
++    data_line = "1.0 2.0 3.0"
++    result = _line_type(data_line)
++    assert result.startswith("data,"), f"Failed to recognize data line: {data_line}"
++    
++    # Test comment lines still work
++    comment_line = "! This is a comment"
++    result = _line_type(comment_line)
++    assert result == "comment", f"Failed to recognize comment: {comment_line}"

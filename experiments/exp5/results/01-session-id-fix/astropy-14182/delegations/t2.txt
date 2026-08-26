@@ -1,0 +1,61 @@
+# RST writer `header_rows` support
+
+## What changed
+`/testbed/astropy/io/ascii/rst.py`, class `RST`:
+
+- `__init__` now accepts `header_rows` and forwards it to `FixedWidth.__init__`
+  (which propagates it to the header and data objects).
+  When header_rows isn't the default `["name"]`, it also adjusts
+  `self.data.start_line = len(header_rows) + 2`.
+- `write()` now places the `=` delimiter line above the header rows, between the
+  last header row and the data, and below the data rows — instead of the old
+  hardcoded `[lines[1]] + lines + [lines[1]]` (which only worked for a single
+  `name` header row).
+
+## Why
+The RST writer previously hardcoded a single `name` header row, so writing with
+`header_rows=['name', 'unit']` produced an incorrectly ordered/duplicated table.
+
+## Noticed but not addressed
+- The read side (`SimpleRSTData.start_line`) had to be shifted for multi-row
+  headers too; that's handled here by adjusting `data.start_line` in `__init__`,
+  so round-trip reading works. This was necessary to pass the roundtrip check.
+- Behavior for >2 header rows should generalize via the same `n_header`/formula
+  logic, but was not explicitly tested. Read `end_line=-1` relies on the trailing
+  `=` line being the final line (an RST-table invariant), which holds for the
+  writer.
+===PATCH===
+diff --git a/astropy/io/ascii/rst.py b/astropy/io/ascii/rst.py
+index abdeba8ef..a16a2b494 100755
+--- a/astropy/io/ascii/rst.py
++++ b/astropy/io/ascii/rst.py
+@@ -57,10 +57,26 @@ class RST(FixedWidth):
+     data_class = SimpleRSTData
+     header_class = SimpleRSTHeader
+ 
+-    def __init__(self):
+-        super().__init__(delimiter_pad=None, bookend=False)
++    def __init__(self, header_rows=None):
++        super().__init__(delimiter_pad=None, bookend=False, header_rows=header_rows)
++        # With multiple header rows the data lines (and the trailing ``=``
++        # delimiter line) shift down accordingly.  Default start_line=3 assumes
++        # a single ``name`` header row.
++        if self.header.header_rows != ["name"]:
++            self.data.start_line = len(self.header.header_rows) + 2
+ 
+     def write(self, lines):
+         lines = super().write(lines)
+-        lines = [lines[1]] + lines + [lines[1]]
++        # RST tables put the column headers between two rows of ``=`` characters.
++        # The header rows (from ``header_rows``) are written first by
++        # FixedWidthData, followed by the position/delimiter row, then the data.
++        n_header = len(self.data.header_rows)
++        position_line = lines[n_header]
++        lines = (
++            [position_line]
++            + lines[:n_header]
++            + [position_line]
++            + lines[n_header + 1 :]
++            + [position_line]
++        )
+         return lines

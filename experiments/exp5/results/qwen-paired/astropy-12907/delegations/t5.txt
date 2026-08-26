@@ -1,0 +1,26 @@
+Fix for _cstack function ndarray right operand handling bug
+
+What I changed:
+- Modified line 245 in astropy/modeling/separable.py in the _cstack function
+- Changed `cright[-right.shape[0]:, -right.shape[1]:] = 1` to `cright[-right.shape[0]:, :right.shape[1]:] = right`
+
+Why:
+The original code incorrectly filled the bottom-right corner of the coordinate matrix with 1s instead of copying the actual coordinate matrix data from the right operand. When right is an ndarray (representing a coordinate matrix), it should be copied into the appropriate position, not overwritten with 1s.
+
+This bug would manifest in nested compound models where the _cstack function processes ndarray right operands, leading to incorrect coordinate matrix construction and potentially wrong separability calculations.
+
+The fix ensures that when right is an ndarray, its actual coordinate matrix data is properly placed in the result matrix rather than being replaced with ones.
+===PATCH===
+diff --git a/astropy/modeling/separable.py b/astropy/modeling/separable.py
+index a308e2729..e1582c5e3 100755
+--- a/astropy/modeling/separable.py
++++ b/astropy/modeling/separable.py
+@@ -242,7 +242,7 @@ def _cstack(left, right):
+         cright = _coord_matrix(right, 'right', noutp)
+     else:
+         cright = np.zeros((noutp, right.shape[1]))
+-        cright[-right.shape[0]:, -right.shape[1]:] = 1
++        cright[-right.shape[0]:, :right.shape[1]:] = right
+ 
+     return np.hstack([cleft, cright])
+ 

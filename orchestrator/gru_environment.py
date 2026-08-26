@@ -35,6 +35,23 @@ config/minion.yaml's verdict-mode Submission steps) and that summary — never t
 patch — is shown alongside the check's real pass/fail. The check result stays the only
 thing that decides PASS/FAIL; the summary is explicitly labeled as not to be trusted for
 correctness, only for "what happened."
+
+Revised 2026-08-25 (exp5 start): every delegation now carries an OpenRouter `session_id`
+(`minion-{run_id}-{delegation_id}`), stable across that one delegation's own turns. exp4's
+cost data showed real, provider-reported cache hit rate collapsing on a handful of calls
+per run (up to 10 of 41) with no correlation to wall-clock gaps — OpenRouter's own docs
+attribute this to sticky-routing drift: without an explicit session_id, the routing key
+is derived by hashing the opening messages, and a growing agent conversation changes that
+hash turn to turn, occasionally landing a request on a different backend than the one
+holding the warm cache. See run_gru_session.py's matching note and experiments/exp5/NOTES.md.
+
+Revised 2026-08-25 (exp5, again): `_run_agentic` now constructs `MinionModel`
+(orchestrator/minion_model.py), not mini-swe-agent's bare `LitellmModel` — same class,
+except cost tracking prefers the response's own real reported cost over litellm's
+static-registry calculator. Caught live, mid-batch: `--minion-cost-limit` was silently
+a no-op for `openrouter/qwen/qwen3-max` (real cost $0.0017/call, tracked cost $0.0) —
+see orchestrator/real_cost.py for the full story and gru_model.py's matching fix on
+Gru's own side.
 """
 
 import logging
@@ -46,9 +63,9 @@ import litellm
 from minisweagent.agents.default import DefaultAgent
 from minisweagent.environments.docker import DockerEnvironment
 from minisweagent.exceptions import Submitted
-from minisweagent.models.litellm_model import LitellmModel
 
 from orchestrator.cache_stats import extract_cache_stats
+from orchestrator.minion_model import MinionModel
 from orchestrator.token_usage import extract_token_usage
 
 _VERDICT_SUMMARY_MARKER = "===PATCH==="
@@ -85,6 +102,7 @@ class GruEnvironment:
         minion_instance_template: str,
         output_dir: Path | None = None,
         logger: logging.Logger | None = None,
+        run_id: str = "test-session",
     ):
         self.docker_env = docker_env
         self.minion_model_kwargs = minion_model_kwargs
@@ -93,6 +111,15 @@ class GruEnvironment:
         self.minion_instance_template = minion_instance_template
         self.output_dir = output_dir
         self.logger = logger or logging.getLogger("gru.environment")
+        # Captured before Gru's session runs any action, so the patch at finish() is
+        # correct even if Gru (or a minion) runs `git commit` along the way — see
+        # _finish()'s 2026-08-25 revision note for why this matters.
+        self.initial_commit = self.docker_env.execute({"command": "git rev-parse HEAD"})["output"].strip()
+        # OpenRouter sticky-routing key prefix — each delegation gets its own
+        # {run_id}-{delegation_id} session_id (see run_gru_session.py's 2026-08-25 note),
+        # since each delegation is its own conversation with its own prefix, not a
+        # continuation of Gru's.
+        self.run_id = run_id
         # Set by run_gru_session.py right after the DefaultAgent(gru_model, self, ...) that
         # owns this environment is constructed — can't be passed in __init__ since Gru's
         # agent doesn't exist yet at that point. Used only to surface each turn's own token
@@ -201,11 +228,14 @@ class GruEnvironment:
             parts.append(f"--- {path} ---\n{body}")
         return "\n\n".join(parts) if parts else "(none)"
 
-    def _run_oneshot(self, args: dict, material: str) -> tuple[str, dict[str, int], int, dict]:
+    def _run_oneshot(self, args: dict, material: str, delegation_id: str) -> tuple[str, dict[str, int], int, dict]:
         """A single model call: text in, text out, no shell. Returns (output, usage, n_calls)."""
         model_kwargs = {
             k: v for k, v in self.minion_model_kwargs.get("model_kwargs", {}).items() if k != "parallel_tool_calls"
         }
+        # A single call has nothing to route consistently against, but set it anyway for
+        # consistency with agentic mode and in case oneshot ever grows a retry/second call.
+        model_kwargs["extra_body"] = {"session_id": f"minion-{self.run_id}-{delegation_id}"}
         prompt = (
             f"<task>\n{args['description']}\n</task>\n\n"
             f"<output_contract>\n{args['output_contract']}\n</output_contract>\n\n"
@@ -234,7 +264,14 @@ class GruEnvironment:
         self, args: dict, material: str, delegation_id: str
     ) -> tuple[str, dict[str, int], int, str, str, dict]:
         """A full bash tool loop against the shared testbed."""
-        minion_model = LitellmModel(**self.minion_model_kwargs)
+        minion_model_kwargs = {
+            **self.minion_model_kwargs,
+            "model_kwargs": {
+                **self.minion_model_kwargs.get("model_kwargs", {}),
+                "extra_body": {"session_id": f"minion-{self.run_id}-{delegation_id}"},
+            },
+        }
+        minion_model = MinionModel(**minion_model_kwargs)
         minion_output_path = None
         if self.output_dir is not None:
             minion_output_path = self.output_dir / "minions" / f"{delegation_id}.traj.json"
@@ -275,7 +312,7 @@ class GruEnvironment:
 
         exit_status, trajectory_path = "", ""
         if mode == "oneshot":
-            submission, tokens, n_calls, cache = self._run_oneshot(args, material)
+            submission, tokens, n_calls, cache = self._run_oneshot(args, material, delegation_id)
             exit_status = "Completed"
         else:
             submission, tokens, n_calls, exit_status, trajectory_path, cache = self._run_agentic(
@@ -337,10 +374,23 @@ class GruEnvironment:
 
     def _finish(self, args: dict) -> dict[str, Any]:
         """A failing final_verification must NOT end the session — that's the signal for Gru to
-        reconsider its approach and keep working, not a terminal state."""
+        reconsider its approach and keep working, not a terminal state.
+
+        Revised 2026-08-25 (exp5): diffs against `self.initial_commit`, not a bare `git diff`
+        (working tree only). Caught live: every one of gpt-solo's 5 runs had GPT-5-mini
+        `git commit` its own fix as a normal part of its workflow, which made a bare
+        `git diff` show nothing — Gru's own final_verification still passed (it re-ran real
+        checks against the actual repo state, which genuinely had the fix), so it called
+        finish() believing it had submitted a real patch, and the harness silently recorded
+        an empty one. All 5 were reported as real SWE-bench failures ("empty patch") that
+        were actually a patch-*extraction* bug, not a capability finding — and by the time
+        this was noticed, the containers were already torn down, so the real patches were
+        unrecoverable. `git diff <ref>` (vs. bare `git diff`) compares the current working
+        tree, staged and unstaged, against `<ref>` — correctly capturing committed and
+        uncommitted changes together, regardless of whether Gru or a minion committed."""
         checks = args.get("final_verification", {}).get("checks", [])
         passed, check_output = self._run_checks(checks)
-        diff_out = self.docker_env.execute({"command": "git diff"})
+        diff_out = self.docker_env.execute({"command": f"git diff {self.initial_commit}"})
         patch = diff_out["output"]
 
         self.logger.info(f"finish attempt: final_verification {'PASSED' if passed else 'FAILED'}")

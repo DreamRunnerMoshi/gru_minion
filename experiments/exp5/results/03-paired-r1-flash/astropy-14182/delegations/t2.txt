@@ -1,0 +1,30 @@
+# Summary
+
+## What changed
+Modified `astropy/io/ascii/rst.py`, class `RST.__init__`:
+- Changed signature from `def __init__(self)` (no args) to `def __init__(self, **kwargs)`.
+- Passed `**kwargs` through to the parent `FixedWidth.__init__` while preserving the fixed parameters `delimiter_pad=None, bookend=False`.
+- Added `self.header_rows = self.header.header_rows` so the RST writer exposes the `header_rows` attribute (the parent `FixedWidth` only stores it on the header/data objects, not on `self`; the verification check requires `writer.header_rows` to exist).
+
+## Why
+Allows `RST(header_rows=['name','unit'])` (and other FixedWidth kwargs) to be accepted, matching the parent writer's capability.
+
+## Not addressed (noted for Gru)
+- `RST.write` (the inherited override that wraps the table with the separator line) assumes exactly **one** header row: it uses `lines[1]` as the wrap/position row. With two `header_rows` (e.g. name + unit), the base write produces `[name, unit, ===, data...]` and `RST.write` then duplicates the `unit` line (index 1) to the top/bottom instead of the `===` position line, yielding malformed output. This is a pre-existing design in `RST.write`, outside the stated `__init__` scope, and I did not modify it. The `header_rows` attribute plumbing works (check passes); only the multi-header-row layout in `write` still needs attention if that feature is actually used for output.
+===PATCH===
+diff --git a/astropy/io/ascii/rst.py b/astropy/io/ascii/rst.py
+index abdeba8ef..bfcfe46a0 100755
+--- a/astropy/io/ascii/rst.py
++++ b/astropy/io/ascii/rst.py
+@@ -57,8 +57,9 @@ class RST(FixedWidth):
+     data_class = SimpleRSTData
+     header_class = SimpleRSTHeader
+ 
+-    def __init__(self):
+-        super().__init__(delimiter_pad=None, bookend=False)
++    def __init__(self, **kwargs):
++        super().__init__(delimiter_pad=None, bookend=False, **kwargs)
++        self.header_rows = self.header.header_rows
+ 
+     def write(self, lines):
+         lines = super().write(lines)

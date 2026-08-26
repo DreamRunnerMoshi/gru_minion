@@ -1,0 +1,71 @@
+```python
+    def _scale_back_ascii(self, col_idx, input_field, output_field):
+        """
+        Convert internal array values back to ASCII table representation.
+
+        The ``input_field`` is the internal representation of the values, and
+        the ``output_field`` is the character array representing the ASCII
+        output that will be written.
+        """
+
+        starts = self._coldefs.starts[:]
+        spans = self._coldefs.spans
+        format = self._coldefs[col_idx].format
+
+        # The the index of the "end" column of the record, beyond
+        # which we can't write
+        end = super().field(-1).itemsize
+        starts.append(end + starts[-1])
+
+        if col_idx > 0:
+            lead = starts[col_idx] - starts[col_idx - 1] - spans[col_idx - 1]
+        else:
+            lead = 0
+
+        if lead < 0:
+            warnings.warn('Column {!r} starting point overlaps the previous '
+                          'column.'.format(col_idx + 1))
+
+        trail = starts[col_idx + 1] - starts[col_idx] - spans[col_idx]
+
+        if trail < 0:
+            warnings.warn('Column {!r} ending point overlaps the next '
+                          'column.'.format(col_idx + 1))
+
+        # TODO: It would be nice if these string column formatting
+        # details were left to a specialized class, as is the case
+        # with FormatX and FormatP
+        if 'A' in format:
+            _pc = '{:'
+        else:
+            _pc = '{:>'
+
+        fmt = ''.join([_pc, format[1:], ASCII2STR[format[0]], '}',
+                       (' ' * trail)])
+
+        # Even if the format precision is 0, we should output a decimal point
+        # as long as there is space to do so--not including a decimal point in
+        # a float value is discouraged by the FITS Standard
+        trailing_decimal = (format.precision == 0 and
+                            format.format in ('F', 'E', 'D'))
+
+        # not using numarray.strings's num2char because the
+        # result is not allowed to expand (as C/Python does).
+        for jdx, value in enumerate(input_field):
+            value = fmt.format(value)
+            if len(value) > starts[col_idx + 1] - starts[col_idx]:
+                raise ValueError(
+                    "Value {!r} does not fit into the output's itemsize of "
+                    "{}.".format(value, spans[col_idx]))
+
+            if trailing_decimal and value[0] == ' ':
+                # We have some extra space in the field for the trailing
+                # decimal point
+                value = value[1:] + '.'
+
+            output_field[jdx] = value
+
+        # Replace exponent separator in floating point numbers
+        if 'D' in format:
+            output_field.replace(encode_ascii('E'), encode_ascii('D'))
+```

@@ -1,0 +1,80 @@
+# Findings: RST writer class and header_rows handling in astropy.io.ascii
+
+**Summary:** The RST writer is `RST` in `astropy/io/ascii/rst.py` (line 35), a subclass of `FixedWidth`
+(`fixedwidth.py`). `header_rows` is *only* implemented in the fixed-width family (`FixedWidth`, `FixedWidthTwoLine`, `FixedWidthNoHeader`) — it is defined/consumed in `fixedwidth.py`, driving both read (`FixedWidthHeader.get_cols`) and write (`FixedWidthData.write`) via per-column `.info` attributes; the plain `Basic`/`BaseHeader`/`BaseData` writers (which RST inherits for the general write chain) have no `header_rows` concept at all. No validation of `header_rows` exists anywhere.
+
+## 1) The RST writer class — `astropy/io/ascii/rst.py`
+
+`RST` (rst.py:35-66) subclasses `FixedWidth`, and its header is a `SimpleRSTHeader` (rst.py:16) that subclasses `FixedWidthHeader`; its data is `SimpleRSTData` (rst.py:29) subclassing `FixedWidthData`.
+
+Key members:
+- rst.py:16-26 `SimpleRSTHeader(FixedWidthHeader)` — sets `position_line = 0`, `start_line = 1`, `splitter_class = DefaultSplitter`, `position_char = "="`; overrides `get_fixedwidth_params` (rst.py:22) to make the rightmost column unbounded (`ends[-1] = None`).
+- rst.py:29-32 `SimpleRSTData(FixedWidthData)` — `start_line = 3`, `end_line = -1`, `splitter_class = FixedWidthTwoLineDataSplitter`.
+- rst.py:35-66 `class RST(FixedWidth)` with `_format_name = "rst"`, `data_class = SimpleRSTData`, `header_class = SimpleRSTHeader`.
+  - `__init__` (rst.py:60-61) calls `super().__init__(delimiter_pad=None, bookend=False)` → invokes `FixedWidth.__init__`, so RST inherits the default `header_rows=["name"]` (see below), i.e. RST will only ever render/read a single `name` header row.
+  - `write` (rst.py:63-66):
+    ```python
+    def write(self, lines):
+        lines = super().write(lines)
+        lines = [lines[1]] + lines + [lines[1]]
+        return lines
+    ```
+    It calls `super().write(lines)` (resolving through the MRO to `BaseReader.write`, since neither `RST`, `FixedWidth`, nor `Basic` define a matching `write(self, lines)`), which ultimately writes the header line via `FixedWidthData.write`, then duplicates `lines[1]` (the `====` position line) to the top and bottom to form the RST separator.
+
+## 2) How header_rows is defined/validated/used for writers generally
+
+`header_rows` appears **only** in `astropy/io/ascii/fixedwidth.py` (confirmed by `grep -rn "header_rows"` across the whole repo: zero hits outside `io/ascii`, and inside `io/ascii` all hits are in `fixedwidth.py` and `tests/test_fixedwidth.py`). The general `Basic`/`core` writer classes (`basic.py`, `core.py`) contain no `header_rows` reference and no validation.
+
+Read path — `FixedWidthHeader.get_cols(fixedwidth.py:84)`:
+- fixedwidth.py:97 `header_rows = getattr(self, "header_rows", ["name"])`
+- fixedwidth.py:163 uses `header_rows.index("name")` to locate the name line: `line = self.get_line(lines, start_line + header_rows.index("name"))`
+- fixedwidth.py:168-174 loops over remaining attrs and does `setattr(col, attr, val)` from each header row line.
+- No validation: if `"name"` is absent from `header_rows`, `header_rows.index("name")` raises `ValueError: 'name' is not in list` during read. There is no explicit check.
+
+Write point — `FixedWidthData.write(fixedwidth.py:261-303`):
+- fixedwidth.py:262-263 `default_header_rows = [] if self.header.start_line is None else ["name"]; header_rows = getattr(self, "header_rows", default_header_rows)`
+- fixedwidth.py:273-278 builds `hdrs_list` from `header_rows`, using `getattr(col.info, col_attr)` for each column (i.e. `header_rows` entries are names of `Column.info` attributes like `dtype`, `unit`, `format`, `description`).
+- fixedwidth.py:281-284 then writes each header row, followed by the position line at fixedwidth.py:296-298 and the data rows.
+- **No validation:** the write path never verifies `header_rows` values against known attributes; an invalid attr would raise an `AttributeError` from `getattr` only if a column lacks it.
+
+`FixedWidth.__init__` (fixedwidth.py:306-358):
+- fixedwidth.py:345 `header_rows=None` parameter; fixedwidth.py:347-348 defaults to `["name"]`; fixedwidth.py:354-355 sets `self.header.header_rows = header_rows` and `self.data.header_rows = header_rows`; fixedwidth.py:357 `if self.data.start_line is None: self.data.start_line = len(header_rows)`.
+- This is how RST gets its `header_rows` default (["name"]) — through `FixedWidth.__init__`.
+
+## 3) How fixed_width supports header_rows
+
+Writer is `FixedWidthData.write` as described above; the width computation (fixedwidth.py:280-295) incorporates header-row strings into per-column widths.
+
+Reader is `FixedWidthHeader.get_cols` described above.
+
+Subclass handling:
+- `FixedWidthNoHeader` (fixedwidth.py:372-406): its `__init__` (fixedwidth.py:401-411) deliberately passes `header_rows=[]` to `super().__init__` (line 411), so no header rows. Its `__init__` does **not** accept a `header_rows` param, which is why `test_fixed_width_no_header_header_rows` (test_fixedwidth.py:601) expects `TypeError: unexpected keyword argument 'header_rows'`.
+- `FixedWidthTwoLine` (fixedwidth.py:438-490): `__init__` (fixedwidth.py:473-477) takes `header_rows=None`, passes it to `super().__init__` (fixedwidth.py:484) and sets `position_line = len(self.header.header_rows)` (fixedwidth.py:487) and `self.data.start_line = position_line + 1` (fixedwidth.py:490).
+
+## 4) Tests referencing header_rows or ascii.rst
+
+`header_rows` tests — all in `astropy/io/ascii/tests/test_fixedwidth.py`:
+- fixed_template test_fixed_width_header_rows (line 564-580) — reads/writes a table with `header_rows = ["dtype","name","unit","format","description"]`.
+- test_fixed_width_two_line_header_rows (line 582-598) — uses `header_rows = ["dtype","unit","format","description","name"]` (name not first).
+- test_fixed_width_no_header_header_rows (line 601-605) — asserts TypeError for `format="fixed_width_no_header"`.
+
+`ascii.rst`/`RST` tests:
+- `astropy/io/ascii/tests/test_rst.py` — the dedicated RST test module (reads at lines 14,33,50,72,88,105,121,139,162-170; `test_write_normal` at line 173). Confirm the RST write path produces `====`/header/data/`====`.
+- `astropy/io/ascii/tests/test_c_reader.py` lines 1671-1707 — round-trip RST via `ascii.read(..., format="rst")` including `fast_reader` variants; the fast reader rejects RST with `format="rst"` at 1695-1702.
+
+## Things I looked for and did not find
+
+- No validation of `header_rows` anywhere (no check for `"name"` presence in write, no membership/attribute checks). Searched `core.py`, `basic.py`, `ui.py`, `docs.py`, and repo-wide grep; did not find.
+- No `header_rows` usage in the Generic `core.py`/`basic.py` machinery — confirmed `grep -rn "header_rows"` returns nothing in those files.
+- No doc reference to `ascii.rst` as a module — a single mention in `docs/io/unified.rst:214` (the format registration table). The only other naming hits were the `rst.py` module itself. The RST format is exposed as `astropy.io.ascii.RST` (see `__init__.py:65` `from .rst import RST`), registered in the reader guess list at `ui.py:694` (`rst.RST`) and imported at `ui.py:42`.
+
+**Commands run** (all from `/testbed/astropy/io/ascii`):
+- `cat rst.py`
+- `grep -rn "header_rows" . --include=*.py`
+- `grep -rn "header_rows" --include=*.py .` from `/testbed` (repo-wide) — only `io/ascii/fixedwidth.py` and `tests/test_fixedwidth.py`
+- `sed -n` slices of `fixedwidth.py` lines 80-200, 240-380, 380-520; `core.py` 640-680, 945-960, 1531-1595; `basic.py` 115-135, 170-200, 370-390
+- `grep -n "header_rows\|def write\|class ...\|def get_cols" fixedwidth.py rst.py`
+- `grep -rn "ascii.rst" .` and `grep -rn "ascii.rst" /testbed/docs` → only `docs/io/unified.rst:214`
+- `grep -rn "header_rows" docs/` → `docs/io/ascii/fixed_width_gallery.rst` (lines 471-567)
+- `cat tests/test_rst.py`; `sed -n 560,620p tests/test_fixedwidth.py`; `sed -n 1660,1720p tests/test_c_reader.py`
+- `grep -n "def write" core.py basic.py` to map the write/header MRO

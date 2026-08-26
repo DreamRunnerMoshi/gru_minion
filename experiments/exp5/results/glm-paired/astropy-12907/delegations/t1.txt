@@ -1,0 +1,75 @@
+## Summary
+
+The separability_matrix function in astropy/modeling/separable.py computes the correlation between model outputs and inputs by analyzing the structure of CompoundModels through a recursive approach. It creates a coord_matrix that tracks which outputs depend on which inputs, using operator-specific functions to handle different model composition operations.
+
+## Detailed Implementation
+
+### Main Functions
+
+**separability_matrix(transform)** (lines 42-69)
+- Public function that computes correlation between outputs and inputs
+- Returns a boolean matrix of shape (n_outputs, n_inputs)
+- Special case handling for single input with multiple outputs
+- Calls internal `_separable()` function and converts results to boolean
+
+**is_separable(transform)** (lines 12-40)
+- Tests if individual outputs are separable (independent)
+- Returns boolean array of size transform.n_outputs
+- Uses sum of separability matrix rows to determine independence
+
+### Core Recursive Function
+
+**_separable(transform)** (lines 147-162)
+- Internal recursive function that handles the main logic
+- First checks if model has custom `_calculate_separability_matrix()` method
+- For CompoundModels: recursively processes left and right components
+- For simple models: calls `_coord_matrix()` to create coordinate mapping
+
+### Helper Functions
+
+**_coord_matrix(model, pos, noutp)** (lines 84-115)
+- Creates array representing inputs/outputs of simple models
+- Shape: (noutp, model.n_inputs)
+- Special handling for Mapping models
+- For non-separable models: fills entire block with 1s
+- For separable models: creates diagonal matrix (identity-like)
+
+**_cstack(left, right)** (lines 118-139)
+- Handles '&' (concatenation) operations
+- Horizontally stacks coordinate matrices
+- Left matrix placed in upper portion, right in lower portion
+
+**_cdot(left, right)** (lines 142-145)
+- Handles '|' (composition) operations  
+- Performs matrix multiplication of coordinate matrices
+- Swaps left/right to maintain correct order
+
+**_arith_oper(left, right)** (lines 70-82)
+- Handles arithmetic operations: '+', '-', '*', '/', '**'
+- Returns matrix of all 1s (non-separable outputs)
+- Validates that models have compatible n_inputs and n_outputs
+
+### Operator Mapping
+
+**_operators** (line 165)
+- Dictionary mapping operators to corresponding functions:
+  - '&' → `_cstack`
+  - '|' → `_cdot`
+  - Arithmetic ops → `_arith_oper`
+
+### Algorithm Flow
+
+1. **Entry point**: `separability_matrix()` calls `_separable()`
+2. **Recursive breakdown**: For CompoundModels, processes left and right children
+3. **Base case**: For simple models, creates coord_matrix via `_coord_matrix()`
+4. **Operator handling**: Uses appropriate function based on operator type
+5. **Result construction**: Combines results using matrix operations (stacking, multiplication)
+
+### Special Cases
+
+- **Single input, multiple outputs**: Returns all ones matrix
+- **Custom implementations**: Models can provide their own `_calculate_separability_matrix()` method
+- **Mapping models**: Special handling for coordinate reordering operations
+- **Non-separable models**: Fill entire coordinate block with dependency indicators
+
+The implementation effectively tracks input-output dependencies through coordinate matrices, allowing it to determine which outputs depend on which inputs across complex model compositions.

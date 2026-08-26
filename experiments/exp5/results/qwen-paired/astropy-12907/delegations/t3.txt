@@ -1,0 +1,41 @@
+The `_coord_matrix` function in `separable.py` generates a coordinate matrix for a given model that represents how its outputs depend on its inputs. This matrix is essential for determining whether a model's outputs are separable — meaning each output depends only on a subset of the inputs independently.
+
+### Key Aspects of `_coord_matrix`:
+
+1. **Purpose**: 
+   It creates a matrix of shape `(noutp, model.n_inputs)` where `noutp` is the total number of outputs in a compound model, and each row corresponds to an output while columns represent input dimensions. The entries indicate whether an input contributes to an output.
+
+2. **Handling Different Model Types**:
+   - For `Mapping` models, it constructs a matrix based on the mapping indices, assigning 1s to positions specified by the mapping to denote input-output relationships.
+   - For non-separable models (`not model.separable`), it assigns a full matrix of ones to indicate dependency across all inputs.
+   - For separable models, it creates an identity-like matrix with 1s along the diagonal, showing that each output maps directly to a single input.
+
+3. **Position Parameter (`pos`)**:
+   The `pos` argument specifies the position of the model within the expression tree of a compound model:
+   - `'left'`: Used when the model is the left operand in a compound operation (like `&` or `|`).
+   - `'right'`: Used when the model is the right operand.
+
+4. **Behavior for Compound Models**:
+   When dealing with compound models (e.g., those formed using `&`, `|`, etc.), `_coord_matrix` is recursively called for sub-models, and results are combined using functions like `_cstack` (for `&`) and `_cdot` (for `|`). These operations ensure that the overall structure reflects the correct input-output dependencies.
+
+5. **Special Case Handling**:
+   - If a model is a `Mapping`, it uses the mapping indices to define the coordinate matrix.
+   - If a model is not separable, it fills the matrix with ones, indicating full interdependence.
+   - For separable models, it initializes an identity matrix, then shifts it appropriately depending on the `pos` value.
+
+### Behavior for CompoundModels:
+
+In the context of `CompoundModel`s:
+- `_separable` calls `_coord_matrix` recursively on both `left` and `right` components.
+- For binary operations (`&` and `|`), the resulting matrices are combined via `_cstack` and `_cdot`, respectively.
+- The final matrix produced by `_coord_matrix` captures how inputs contribute to outputs in complex compositions involving multiple models.
+
+### Preservation of Internal Separability Structure:
+
+Yes, `_coord_matrix` correctly preserves the internal separability structure of CompoundModels:
+- It respects the structure imposed by `&` (concatenation) and `|` (composition) operations.
+- For separable components, it ensures that their individual mappings are preserved in the global coordinate matrix.
+- For non-separable models, it flags them appropriately by setting all entries to 1, reflecting lack of independence.
+- The recursive nature allows the function to build up the correct representation of the entire compound model’s behavior without losing track of local separability properties.
+
+Thus, `_coord_matrix` plays a critical role in accurately tracking and representing the separability characteristics of complex models built from simpler ones.
