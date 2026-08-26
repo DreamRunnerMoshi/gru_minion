@@ -139,3 +139,73 @@ a benchmark with zero tolerance for reported failure." Also open: the minion
 token-share finding (69.7%) is the strongest version of exp5's core result seen
 yet, on a completely different task shape — worth another pair to see if it's
 GLM-specific or general once the give-up-rate question is settled.
+
+## Second pair: gemini-3.7-flash / deepseek-v3.2, and the give-up question resolved
+
+Second question this batch answers: was the low glm-paired resolve rate (14%) about
+GAIA being genuinely hard for GLM specifically, or the shared prompt itself? Ran the
+identical 23 instances, identical harness, only the model pair changed — Gru:
+`google/gemini-3.7-flash` ($0.375/$1.875 per M, a reasoning model — confirmed live
+its `reasoning_content` counts against completion tokens and gets billed), minion:
+`deepseek/deepseek-v3.2` ($0.26/$0.38 per M). Both verified live for real
+tool-calling before the batch (`litellm.completion` with `build_tools()`, confirmed
+`finish_reason: tool_calls`) — Gemini's `:batch` suffix variant was confirmed
+earlier (exp5) to be batch-API-only and incompatible with this harness; the
+non-batch `gemini-3.7-flash` used here is not that.
+
+**12/23 resolved (52%)** — a dramatic swing from glm-paired's 14%, and it settles
+the open question directly: **zero give-up/refusal answers this run** (vs. GLM's 6
+of 22), so the low GLM number was substantially GLM's own behavior interacting
+with the shared prompt, not a property of the prompt or the harness that would
+sink any model on GAIA. $1.437 total Gru cost, ~$1.73 drawn from the real
+OpenRouter balance across the whole batch.
+
+| Instance | Resolved | Gru calls | Delegations | Gru tok | Minion tok | Minion share | Gru $ | Wall |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| 00d579ea | ❌ | 4 | 1 | 12,136 | 327,975 | 96.4% | $0.0055 | 231s |
+| 0512426f | ❌ | 60 | 0 | 1,059,319 | 0 | 0.0% | $0.1760 | 465s |
+| 0bdb7c40 | ❌ | 34 | 0 | 384,040 | 0 | 0.0% | $0.0724 | 270s |
+| 384d0dd8 | ❌ | 60 | 0 | 1,064,160 | 0 | 0.0% | $0.1592 | 482s |
+| 50f58759 | ✅ | 19 | 1 | 211,260 | 99,405 | 32.0% | $0.0445 | 634s |
+| 56db2318 | ✅ | 3 | 0 | 14,426 | 0 | 0.0% | $0.0098 | 21s |
+| 5f982798 | ❌ | 60 | 0 | 908,141 | 0 | 0.0% | $0.1502 | 411s |
+| 676e5e31 | ❌ | 45 | 1 | 836,727 | 613,637 | 42.3% | $0.1269 | 818s |
+| 72c06643 | ❌ | 10 | 0 | 43,284 | 0 | 0.0% | $0.0182 | 54s |
+| 8131e2c0 | ❌ | 60 | 0 | 879,695 | 0 | 0.0% | $0.1422 | 307s |
+| 851e570a | ✅ | 3 | 0 | 10,124 | 0 | 0.0% | $0.0058 | 19s |
+| 983bba7c | ✅ | 16 | 1 | 159,176 | 352,451 | 68.9% | $0.0435 | 491s |
+| 9e1fc53b | ❌ | 19 | 0 | 93,837 | 0 | 0.0% | $0.0344 | 84s |
+| ad2b4d70 | ✅ | 4 | 1 | 10,968 | 266,653 | 96.0% | $0.0050 | 231s |
+| c3a79cfe | ✅ | 7 | 0 | 26,929 | 0 | 0.0% | $0.0139 | 35s |
+| de9887f5 | ✅ | 4 | 1 | 12,043 | 183,764 | 93.8% | $0.0059 | 243s |
+| e961a717 | ✅ | 13 | 0 | 64,447 | 0 | 0.0% | $0.0273 | 70s |
+| ebbc1f13 | ❌ | 60 | 0 | 729,575 | 0 | 0.0% | $0.1346 | 410s |
+| 08f3a05f | ✅ | 3 | 0 | 9,107 | 0 | 0.0% | $0.0053 | 15s |
+| 17b5a6a3 | ✅ | 18 | 0 | 100,572 | 0 | 0.0% | $0.0346 | 82s |
+| 872bfbb1 | ❌ | 56 | 1 | 741,255 | 275,417 | 27.1% | $0.1340 | 547s |
+| ad37a656 | ✅ | 4 | 1 | 10,805 | 101,619 | 90.4% | $0.0050 | 134s |
+| f46b4380 | ✅ | 33 | 0 | 415,622 | 0 | 0.0% | $0.0827 | 147s |
+
+**A different, more expensive failure mode replaces the give-up pattern: grinding
+to the step limit.** 5 of 11 failures are `exit_status=LimitsExceeded` — Gemini
+used its entire 60-turn budget without ever calling `finish()` (`0512426f`,
+`384d0dd8`, `5f982798`, `8131e2c0`, `ebbc1f13`), each burning 700K-1.06M Gru tokens
+in the process (vs. a typical resolved instance's 10K-200K). **Every one of these
+5 has zero delegations** — when Gemini gets stuck on a hard question, it does 100%
+of the investigation itself rather than farming any of it out, the opposite of the
+resolved instances, most of which delegated at least once. Minion token share for
+the whole batch is **22.2%** (7.80M Gru tokens vs. 2.22M minion tokens) — far below
+glm-paired's 69.7%, because Gemini simply delegates far less often (8/23 vs.
+11/22) and, when stuck, not at all.
+
+**So the two pairs fail in opposite, informative ways.** GLM: delegates heavily,
+fails cheaply and fast by explicitly refusing. Gemini: delegates rarely, fails
+expensively and slowly by grinding alone to the turn limit. Both point at the same
+underlying gap in the shared prompt (written for SWE-bench, where a bounded amount
+of investigation before either succeeding or reporting failure is the norm) — GAIA
+apparently needs either an explicit "you must commit to an answer" instruction
+(would help GLM) or a cheaper way to recognize "this line of investigation isn't
+converging, try delegating a different angle instead of grinding" (would help
+Gemini) — neither of which exists in the current shared prompt, deliberately, since
+adding either would be exactly the kind of prompt change this experiment is
+supposed to hold constant.
