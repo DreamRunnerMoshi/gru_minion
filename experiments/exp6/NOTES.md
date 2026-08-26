@@ -186,6 +186,30 @@ OpenRouter balance across the whole batch.
 | ad37a656 | ✅ | 4 | 1 | 10,805 | 101,619 | 90.4% | $0.0050 | 134s |
 | f46b4380 | ✅ | 33 | 0 | 415,622 | 0 | 0.0% | $0.0827 | 147s |
 
+### Cache hit stats (real, provider-reported — not this project's own estimate)
+
+Pulled directly from OpenRouter's own per-call `usage.cached_tokens`/
+`prompt_tokens_details.cached_tokens` fields, not the heuristic
+`estimated_cache_hit_pct` this project computes locally (`orchestrator/cache_stats.py`)
+— worth separating the two, since the heuristic runs noticeably hot against reality
+here.
+
+| Role | Prompt tokens | Real reported cache hits | Real % | This project's own estimate |
+|---|---:|---:|---:|---:|
+| Gru (gemini-3.7-flash) | 8,731,196 | 5,725,461 | **65.6%** | 97.0% |
+| Minion (deepseek-v3.2), 210 calls | 3,015,593 | 2,034,368 | **67.5%** | — |
+
+Both roles land in the same real 65-68% range once a session runs long enough —
+but short sessions get zero benefit: every instance with only 3-4 Gru turns
+(`00d579ea`, `56db2318`, `851e570a`, `ad2b4d70`, `c3a79cfe`, `de9887f5`,
+`08f3a05f`, `ad37a656`) shows **0% real cache hits**, too few calls for the cache
+to warm up before the session ends, while the longer, delegation-heavy instances
+(`384d0dd8`, `0512426f`, `5f982798`, `676e5e31`, `8131e2c0`, `ebbc1f13`,
+`872bfbb1`) hit 59-72%. The local estimate doesn't track this split at all —
+it reports 66-88%+ even on the 0%-real short sessions, which is the same
+overshoot pattern the estimate has shown before in this project's earlier
+experiments, now confirmed on a third, unrelated model pair.
+
 **A different, more expensive failure mode replaces the give-up pattern: grinding
 to the step limit.** 5 of 11 failures are `exit_status=LimitsExceeded` — Gemini
 used its entire 60-turn budget without ever calling `finish()` (`0512426f`,
