@@ -83,14 +83,59 @@ path. All 25 project tests (19 SWE-bench + 6 GAIA) still pass together.
 `orchestrator/gaia_dataset.py` (dataset loading/filtering) are unaffected by this
 correction — they're harness-internal, not prompt content.
 
+## Results: the corrected batch (glm-paired, same 23 instances)
+
+22 of 23 completed (`ad37a656`, a pilot instance, hung mid-session — same
+reproducible glm-paired hang pattern documented in exp5 — killed after ~15 minutes
+of zero log progress; no cost_limit/step_limit caught it in time because the hang
+sat inside a single call, not a runaway loop, so there was nothing to trip against
+until it was killed manually).
+
+**3/22 resolved (14%) — a sharp drop from the divergent-prompt run's 12/23 (52%).**
+Checked directly that this isn't a scoring or extraction bug: the mechanism is
+sound (`0bdb7c40`: extracted `White;5875` against gold `White; 5876` — a genuine
+near-miss, not a parsing failure). Delegation itself increased under the corrected,
+shared prompt — 11/22 instances delegated at all (vs. 6/23 before), and minion
+token share rose to **69.7%** (2.31M Gru tokens vs. 5.30M minion tokens, vs. 56.6%
+before) — both numbers moving in the direction you'd expect once `delegation.md`'s
+real, unedited "delegate whenever mechanical and checkable" guidance is actually in
+effect instead of a rewritten version of it.
+
+**The real, reportable finding: a large share of the wrong answers are Gru
+explicitly giving up, not guessing wrong.** 6 of 22 final answers are refusals —
+`"Unable to complete task: Tools designed for code deb..."`,
+`"UNABLE_TO_COMPLETE_TASK - No access to YouTube or..."`,
+`"Cannot fulfill academic research request with avai..."`,
+`"Data not found in repository"`,
+`"TASK_INCOMPLETE: Requires web/database access capabi..."` — and at least one more
+(`676e5e31`) dumped a whole `=== Definitive Analysis ===` block into the final
+check instead of a single clean answer line, violating the one-line-answer
+instruction outright. The remaining wrong answers are genuine misses (`72c06643`:
+`230` vs. gold `55`; `56db2318`: `2, 8` vs. gold `7, 9`; `e961a717`: `6` vs. gold
+`12`; `de9887f5`: `0` vs. gold `22`).
+
+**Why this is a genuine prompt/task-shape interaction, not (only) a capability
+gap**: the shared prompt fragments were written for SWE-bench, where "the tests
+still fail" is a normal, non-catastrophic thing to submit — `task_approach.md` and
+`verification.md` never tell Gru it must commit to a best-effort answer rather than
+report failure, because on SWE-bench that instinct is fine. GAIA's scoring has no
+such tolerance: a refusal string scores identically to a confident wrong guess —
+both are just "not the gold answer." The one instance-template line asking for a
+clean final-line answer (necessary plumbing, not shared prompt content — see
+Correction above) doesn't address this at all; it's a formatting instruction, not
+a "you must attempt an answer" one. Whether to add that instruction anywhere is a
+real design question this data surfaces, not yet decided — it would need to live in
+the instance_template (benchmark-specific) to keep the shared fragments untouched.
+
 ## What's still open
 
-The corrected harness is live-verified (one smoke-test instance,
-`experiments/exp6/results/smoke-test/17b5a6a3`) but the full batch has not been
-rerun under it yet — the 12/23 number from the divergent-prompt run is not a valid
-substitute and should not be cited. Next step: rerun the pilot + Level 3 batch (same
-23 instances as before, same glm-paired pair) under the corrected, shared-prompt
-harness to get real numbers for this experiment's actual question — does the
-minion-token-share finding, and the "delegation doesn't cost accuracy" finding, from
-exp5 carry over to GAIA's task shape, now that the only thing that changed between
-this run and exp5's is the benchmark, not the prompt.
+n=22 is a small sample for a resolve-rate claim, but large enough to say the
+give-up pattern is real (6+ of 19 wrong answers, not 1-2). Not yet decided: whether
+addressing it belongs in this experiment's scope at all (it would mean touching the
+instance_template again, which is legitimate per-benchmark plumbing but worth a
+deliberate decision, not a reflexive fix) or whether it's simply the honest first
+data point on "the SWE-bench-native prompt, unmodified, doesn't transfer cleanly to
+a benchmark with zero tolerance for reported failure." Also open: the minion
+token-share finding (69.7%) is the strongest version of exp5's core result seen
+yet, on a completely different task shape — worth another pair to see if it's
+GLM-specific or general once the give-up-rate question is settled.

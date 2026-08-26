@@ -1,0 +1,184 @@
+```python
+"""
+Agricultural Standards Analysis Script
+Calculates the percentage of 1959 U.S. agricultural standards that were superseded by 2023.
+Focuses on dried/dehydrated and frozen/chilled items.
+
+Based on research findings from 1959 to August 2023.
+"""
+
+class AgriculturalStandardsAnalyzer:
+    def __init__(self):
+        # Initialize data structures for standards
+        # Based on the research findings, this represents what we can definitively identify
+        self.standards_1959 = {
+            'dried_dehydrated': [
+                {'name': 'Apples, dried', 'date': 'October 24, 1955', 'status': 'superseded'},
+                {'name': 'Apples, dehydrated (low moisture)', 'date': 'July 31, 1977', 'status': 'superseded'},
+                {'name': 'Pears, dried', 'date': 'May 24, 1967', 'status': 'unknown'},
+            ],
+            'frozen': [
+                {'name': 'Apples, frozen', 'date': 'May 17, 1954', 'status': 'unknown'},
+                {'name': 'Peas, frozen', 'date': 'May 28, 1959', 'status': 'superseded'},
+                {'name': 'Peppers, sweet, frozen', 'date': 'March 13, 1959', 'status': 'superseded'},
+                {'name': 'Peas and Carrots, frozen', 'date': 'March 20, 1955', 'status': 'unknown'},
+                {'name': 'Pineapple, frozen', 'date': 'January 25, 1949', 'status': 'unknown'},
+            ]
+        }
+        
+        # Research notes on supersession
+        self.research_notes = {
+            'dried_dehydrated': [
+                "Modern commodity specifications (2021-2023) have replaced many 1959 standards",
+                "Original dehydrated standards (pre-1977) were superseded by newer standards",
+                "The 1974 'United States Standards for Grades of Dehydrated (Low Moisture) Peaches' superseded earlier standards"
+            ],
+            'frozen': [
+                "Many frozen vegetable standards were updated between 2013 to replace dual nomenclature with single letter grades",
+                "Some standards were removed entirely as part of USDA's regulatory cleanup"
+            ]
+        }
+        
+        # Additional information from research
+        self.research_limitations = [
+            "Research did not identify a complete list of all 1959 standards",
+            "Some standards may have been superseded but not explicitly documented in the research",
+            "Various dried fruits and vegetables mentioned in research but not individually enumerated"
+        ]
+    
+    def count_standards(self):
+        """Count total standards and superseded standards by category"""
+        counts = {
+            'dried_dehydrated': {'total': 0, 'superseded': 0, 'unknown': 0},
+            'frozen': {'total': 0, 'superseded': 0, 'unknown': 0},
+            'overall': {'total': 0, 'superseded': 0, 'unknown': 0}
+        }
+        
+        for category in ['dried_dehydrated', 'frozen']:
+            for standard in self.standards_1959[category]:
+                counts[category]['total'] += 1
+                counts['overall']['total'] += 1
+                
+                if standard['status'] == 'superseded':
+                    counts[category]['superseded'] += 1
+                    counts['overall']['superseded'] += 1
+                else:
+                    counts[category]['unknown'] += 1
+                    counts['overall']['unknown'] += 1
+        
+        return counts
+    
+    def calculate_percentage(self, counts, category='overall', include_unknown=False):
+        """
+        Calculate percentage of superseded standards.
+        
+        If include_unknown is True, treats unknown status as potentially superseded
+        based on the general research findings that "many standards" were superseded.
+        """
+        total = counts[category]['total']
+        superseded = counts[category]['superseded']
+        
+        if include_unknown:
+            # Estimate based on research that "many" standards were superseded
+            unknown = counts[category]['unknown']
+            # Conservative estimate: assume 50% of unknown standards were superseded
+            estimated_superseded = superseded + (unknown * 0.5)
+            return (estimated_superseded / total) * 100
+        else:
+            if total == 0:
+                return 0.0
+            return (superseded / total) * 100
+    
+    def generate_report(self, estimate_unknown=False):
+        """Generate analysis report with supersession percentages"""
+        counts = self.count_standards()
+        
+        report = []
+        report.append("=== U.S. Agricultural Standards Analysis Report ===")
+        report.append(f"Analysis Period: 1959 to August 2023")
+        report.append(f"Focus: Dried/Dehydrated and Frozen/Chilled Products")
+        
+        if estimate_unknown:
+            report.append("(Estimating unknown standards as potentially superseded)")
+        report.append("")
+        
+        # Overall stats
+        report.append("=== Overall Statistics ===")
+        report.append(f"Total standards analyzed: {counts['overall']['total']}")
+        report.append(f"Superseded standards: {counts['overall']['superseded']}")
+        report.append(f"Unknown status: {counts['overall']['unknown']}")
+        report.append(f"Percentage superseded (definitive): {self.calculate_percentage(counts, 'overall'):.2f}%")
+        
+        if estimate_unknown:
+            report.append(f"Estimated percentage superseded: {self.calculate_percentage(counts, 'overall', include_unknown=True):.2f}%")
+        report.append("")
+        
+        # Category breakdown
+        for category in ['dried_dehydrated', 'frozen']:
+            report.append(f"=== {category.replace('_', ' ').title()} ===")
+            report.append(f"Total standards: {counts[category]['total']}")
+            report.append(f"Superseded standards: {counts[category]['superseded']}")
+            report.append(f"Unknown status: {counts[category]['unknown']}")
+            report.append(f"Percentage superseded (definitive): {self.calculate_percentage(counts, category):.2f}%")
+            
+            if estimate_unknown:
+                report.append(f"Estimated percentage superseded: {self.calculate_percentage(counts, category, include_unknown=True):.2f}%")
+            report.append("")
+            
+            # Add research notes
+            report.append("Research Notes:")
+            for note in self.research_notes[category]:
+                report.append(f"- {note}")
+            report.append("")
+        
+        # Research limitations
+        report.append("=== Research Limitations ===")
+        for limitation in self.research_limitations:
+            report.append(f"- {limitation}")
+        report.append("")
+        
+        # Individual standard details
+        for category in ['dried_dehydrated', 'frozen']:
+            report.append(f"=== {category.replace('_', ' ').title()} Standards Details ===")
+            for standard in self.standards_1959[category]:
+                status = "Superseded" if standard['status'] == 'superseded' else "Status uncertain"
+                report.append(f"- {standard['name']} ({standard['date']}): {status}")
+            report.append("")
+        
+        return "\n".join(report)
+    
+    def export_to_csv(self, filename="agricultural_standards_analysis.csv"):
+        """Export analysis results to CSV file"""
+        import csv
+        
+        with open(filename, 'w', newline='') as csvfile:
+            fieldnames = ['Category', 'Standard Name', 'Date', 'Status']
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            
+            writer.writeheader()
+            for category in ['dried_dehydrated', 'frozen']:
+                for standard in self.standards_1959[category]:
+                    writer.writerow({
+                        'Category': category.replace('_', ' ').title(),
+                        'Standard Name': standard['name'],
+                        'Date': standard['date'],
+                        'Status': standard['status'].capitalize()
+                    })
+        
+        return f"Analysis exported to {filename}"
+
+
+if __name__ == "__main__":
+    analyzer = AgriculturalStandardsAnalyzer()
+    
+    # Generate and display definitive report
+    print("=== Definitive Analysis ===")
+    print(analyzer.generate_report(estimate_unknown=False))
+    
+    # Generate and display estimated report (with assumptions)
+    print("\n=== Estimated Analysis (with assumptions) ===")
+    print(analyzer.generate_report(estimate_unknown=True))
+    
+    # Export to CSV
+    print(f"\n{analyzer.export_to_csv()}")
+```
