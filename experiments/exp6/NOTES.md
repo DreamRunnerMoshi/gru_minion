@@ -209,3 +209,40 @@ converging, try delegating a different angle instead of grinding" (would help
 Gemini) — neither of which exists in the current shared prompt, deliberately, since
 adding either would be exactly the kind of prompt change this experiment is
 supposed to hold constant.
+
+### Root cause of the grinding, and a sandbox-level (not prompt-level) fix
+
+Traced one `LimitsExceeded` trajectory (`0512426f`) turn by turn: Gemini never
+uses `websearch.py` at all across 60 turns. Instead it writes fresh raw
+`urllib.request` scraping code against DuckDuckGo, then Google, then Wikipedia,
+then YouTube transcripts, then GitHub, then the Wayback Machine — a new hand-rolled
+scraper per turn, each a dead end (blocked, wrong format, or genuinely no search
+capability), never once checking what tools the sandbox actually provides.
+
+Checked GLM's equivalent trajectories for contrast: GLM's own Gru also never uses
+`websearch.py` directly (zero uses across all 22 glm-paired instances) — but GLM
+delegates the actual searching to its minion, and **the minion** consistently
+discovers and uses `websearch.py` heavily (5-13 calls per delegation). Traced the
+discovery moment directly (`872bfbb1`'s `t1` minion): after two failed raw
+`curl`/`wget` attempts, it runs `find /usr/local/bin -name "*web*" -o -name
+"*search*" ...` — a deliberate "what do I actually have" step — finds the tool at
+turn 24, and uses it from then on. Gemini never takes that step, in either role.
+
+This is genuinely a tooling-discoverability problem, not a prompt problem — the
+tool was equally available to both, just never checked for. Fixed at the sandbox
+level, not the prompt: added `orchestrator/gaia_sandbox/TOOLS.md`, copied into
+`/workspace` (the container's cwd) at image build time, so a routine `ls` surfaces
+it for free — no system prompt or instance_template change, same fix applies
+regardless of what model or prompt is pointed at this sandbox later.
+
+**Verified live**: reran the two most expensive `LimitsExceeded` instances
+(`0512426f`, `384d0dd8`) under the rebuilt image. `0512426f`: **fixed completely**
+— `LimitsExceeded` → `Submitted, resolved=True`, 0 delegations → 2, cost dropped
+from $0.176 to $0.0194 (9x cheaper). `384d0dd8`: **partially fixed** — still
+`LimitsExceeded`, but now with 1 delegation (confirmed via trajectory: it *did*
+discover and use `websearch.py` once, early on) followed by 59 `run_check` turns
+doing the rest itself. So the fix reliably solves "does the model know the tool
+exists" — it doesn't change Gemini's underlying tendency to delegate once and then
+revert to self-directed work rather than defaulting to delegating repeatedly,
+which is a separate, deeper behavioral trait (consistent with the batch-wide
+22.2% vs. 69.7% minion-token-share gap between the two pairs).
