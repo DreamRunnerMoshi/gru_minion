@@ -1,33 +1,39 @@
-"""Exercises the GAIA harness's own control flow (tool dispatch, delegation, finish)
-against a scripted model — no docker, no real API, no network. Mirrors
-tests/test_delegation_flow.py's role for the SWE-bench side: catches real wiring bugs
-(wrong action name, wrong field name, wrong exit condition) before spending money on a
-live GAIA run.
+"""Exercises the GAIA harness's own control flow against a scripted model — no docker,
+no real API, no network. Uses the SAME action set as the SWE-bench side
+(delegate_to_minion/think/run_check/finish, unchanged tool schema) — see
+orchestrator/gaia_environment.py's module docstring for why there's no GAIA-specific
+web_search/python_exec tool or answer field. Mirrors tests/test_delegation_flow.py's
+role for the SWE-bench side: catches real wiring bugs before spending money on a live
+GAIA run.
 """
 
 from tests.gaia_harness import run_session
 from tests.mock_llm import Tool, submit
 
 
-def _finish(answer="4", reasoning="2 + 2 = 4"):
-    return Tool("finish", {"answer": answer, "reasoning": reasoning})
+def _finish(summary="done", checks=None):
+    return Tool("finish", {"summary": summary, "final_verification": {"checks": checks or ["echo 4"]}})
 
 
-def test_think_then_finish(tmp_path):
+def test_think_then_finish_extracts_answer_from_last_check(tmp_path):
+    """finish() has no `answer` field (same shared tool schema as SWE-bench) — the
+    answer comes from the last final_verification check's own stdout, independent of
+    what Gru wrote in summary. This is the mechanism, not a convention Gru is trusted
+    to follow."""
     steps = [
         Tool("think", {"note": "This is simple arithmetic, no search needed."}),
-        _finish(),
+        _finish(summary="The answer is 4.", checks=["echo 4"]),
     ]
     session = run_session(tmp_path=tmp_path, steps=steps)
 
     assert session.result["exit_status"] == "Submitted"
     assert session.result["submission"] == "4"
-    assert session.gaia_env.final_reasoning == "2 + 2 = 4"
+    assert session.gaia_env.final_answer == "4"
 
 
-def test_python_exec_runs_real_code(tmp_path):
+def test_run_check_executes_real_commands(tmp_path):
     steps = [
-        Tool("python_exec", {"code": "print(2 + 2)"}),
+        Tool("run_check", {"checks": ["python3 -c \"print(2 + 2)\""]}),
         _finish(),
     ]
     session = run_session(tmp_path=tmp_path, steps=steps)
@@ -37,10 +43,13 @@ def test_python_exec_runs_real_code(tmp_path):
     assert any("4" in str(m.get("content", "")) for m in tool_msgs)
 
 
-def test_web_search_hits_the_fake_script(tmp_path):
+def test_run_check_can_reach_the_websearch_helper(tmp_path):
+    """Same mechanism as SWE-bench's run_check reaching `git`/`sed`/etc: this is just a
+    shell command, and the sandbox happens to have websearch.py on PATH — no dedicated
+    tool needed."""
     steps = [
-        Tool("web_search", {"query": "capital of France"}),
-        _finish(answer="Paris", reasoning="found via search"),
+        Tool("run_check", {"checks": ["websearch.py capital of France"]}),
+        _finish(),
     ]
     session = run_session(tmp_path=tmp_path, steps=steps)
 
@@ -50,8 +59,9 @@ def test_web_search_hits_the_fake_script(tmp_path):
 
 
 def test_delegate_agentic_findings_then_finish(tmp_path):
-    """Full loop: Gru delegates a search to the minion (agentic, findings), the minion
-    runs a real bash-tool turn and submits, Gru reads the findings and finishes."""
+    """Full loop: Gru delegates a search to the minion (agentic, findings) via the
+    unchanged delegate_to_minion tool, the minion runs a real bash-tool turn and
+    submits, Gru reads the findings and finishes."""
     steps = [
         Tool(
             "delegate_to_minion",
@@ -63,8 +73,8 @@ def test_delegate_agentic_findings_then_finish(tmp_path):
                 "output_contract": "The capital city name.",
             },
         ),
-        submit("echo Paris"),  # minion's only turn: real bash, real subprocess, no docker needed
-        _finish(answer="Paris", reasoning="minion found it"),
+        submit("echo Paris"),
+        _finish(summary="minion found it", checks=["echo Paris"]),
     ]
     session = run_session(tmp_path=tmp_path, steps=steps)
 
@@ -75,11 +85,11 @@ def test_delegate_agentic_findings_then_finish(tmp_path):
     assert session.gaia_env.minion_records[0]["returns"] == "findings"
 
 
-def test_delegate_verdict_uses_independent_python_check(tmp_path):
+def test_delegate_verdict_uses_independent_check(tmp_path):
     """returns='verdict' must be decided by GaiaEnvironment re-running verification.checks
     itself, not by the minion's own claim — mirrors gru_environment's verifiability-trap
-    design. Script the minion claiming success while the real check would fail, and
-    confirm the observation still reports FAIL."""
+    design, unchanged. Script the minion claiming success while the real check would
+    fail, and confirm the observation still reports FAIL."""
     steps = [
         Tool(
             "delegate_to_minion",
@@ -89,7 +99,7 @@ def test_delegate_verdict_uses_independent_python_check(tmp_path):
                 "mode": "agentic",
                 "inputs": {"scope": "arithmetic"},
                 "output_contract": "N/A",
-                "verification": {"checks": ["print(1 == 2)"]},  # deliberately always-false
+                "verification": {"checks": ["test 1 -eq 2"]},  # deliberately always-false
             },
         ),
         submit("echo 'claims success, but the check will disagree'"),
@@ -103,14 +113,14 @@ def test_delegate_verdict_uses_independent_python_check(tmp_path):
     assert "FAIL" in str(verdict_msg["content"])
 
 
-def test_finish_without_answer_is_rejected(tmp_path):
+def test_finish_rejected_when_final_verification_fails(tmp_path):
     steps = [
-        Tool("finish", {"answer": "", "reasoning": "empty answer, should be rejected"}),
+        Tool("finish", {"summary": "done", "final_verification": {"checks": ["test 1 -eq 2"]}}),
         _finish(),
     ]
     session = run_session(tmp_path=tmp_path, steps=steps)
 
     assert session.result["exit_status"] == "Submitted"
-    # First call's response should have been a FormatError, not an immediate Submitted —
-    # confirmed indirectly: two calls were needed (the empty-answer attempt, then the real one).
+    # First call's checks failed and got rejected; second (real) finish succeeded —
+    # confirmed indirectly by needing two calls.
     assert len(session.llm.calls) == 2

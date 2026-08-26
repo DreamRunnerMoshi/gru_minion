@@ -1,12 +1,16 @@
-"""GAIA sibling of tests/harness.py — same wiring (GaiaModel + GaiaEnvironment +
-DefaultAgent, a ScriptedLLM instead of a real model), swapped to LocalEnvironment
-instead of Docker (no sandbox image needed for these tests) and a scratch directory
-instead of a git repo (GAIA has no repository to check out). GaiaEnvironment's
-websearch_path is pointed at a fake local script instead of the real image's
-/usr/local/bin/websearch.py, so a scripted web_search resolves to deterministic canned
-output instead of a real Tavily call — see make_scratch_dir.
+"""GAIA sibling of tests/harness.py — same wiring (GruModel + gru_config, a ScriptedLLM
+instead of a real model), swapped to LocalEnvironment instead of Docker (no sandbox
+image needed for these tests) and a scratch directory instead of a git repo (GAIA has
+no repository to check out). Deliberately reuses GruModel/load_gru_config UNCHANGED,
+not a GAIA-specific model/config class — see orchestrator/gaia_environment.py's module
+docstring: one architecture, one prompt, only the benchmark underneath changes.
+
+A fake `websearch.py` is dropped into a bin/ dir under tmp_path so a scripted
+`run_check` that shells out to it (exactly as the real gaia-sandbox image's run_check
+calls would) resolves to deterministic canned output instead of a real Tavily call.
 """
 
+import os
 import stat
 import time
 from dataclasses import dataclass
@@ -20,9 +24,9 @@ from minisweagent.agents.default import DefaultAgent
 from minisweagent.environments.local import LocalEnvironment
 
 from orchestrator.cost_context import describe_cost_ratio
-from orchestrator.gaia_config import load_gaia_config
+from orchestrator.gru_config import load_gru_config
 from orchestrator.gaia_environment import GaiaEnvironment
-from orchestrator.gaia_model import GaiaModel
+from orchestrator.gru_model import GruModel
 from tests.mock_llm import ScriptedLLM, Step
 
 CONFIG_DIR = Path(__file__).parent.parent / "orchestrator" / "config"
@@ -45,10 +49,10 @@ class ScratchEnvironment(LocalEnvironment):
 
 
 def make_scratch_dir(tmp_path: Path) -> tuple[Path, Path]:
-    """A plain scratch directory, plus a separate dir holding a fake websearch.py —
-    GaiaEnvironment's `websearch_path` param (see gaia_environment.py) points at this
-    instead of the real image's /usr/local/bin/websearch.py, so a scripted web_search
-    resolves to deterministic canned output with no real network call."""
+    """A plain scratch directory, plus a bin/ dir on a fake websearch.py — the real
+    gaia-sandbox image has this at /usr/local/bin/websearch.py; a scripted run_check
+    here points at the tmp_path copy instead via PATH, so `run_check` calling
+    `websearch.py ...` (not the absolute path) resolves without a real Tavily call."""
     workdir = tmp_path / "workspace"
     workdir.mkdir()
     bin_dir = tmp_path / "bin"
@@ -77,14 +81,14 @@ def run_session(
     output_dir: Path | None = None,
 ) -> Session:
     workdir, bin_dir = make_scratch_dir(tmp_path)
-    env = ScratchEnvironment(cwd=str(workdir))
+    env = ScratchEnvironment(cwd=str(workdir), env={"PATH": f"{bin_dir}:" + os.environ.get("PATH", "")})
 
-    gaia_cfg = load_gaia_config(gru_config)
+    gaia_cfg = load_gru_config(gru_config)
     minion_cfg = load_yaml("gaia-minion.yaml")
 
     llm = ScriptedLLM(steps)
     with patch("litellm.completion", llm):
-        gru_model = GaiaModel(
+        gru_model = GruModel(
             model_name="mock/gru", model_kwargs=gaia_cfg["model"]["model_kwargs"], policy=gaia_cfg["tool_policy"]
         )
         minion_model_kwargs = {"model_name": "mock/minion", "model_kwargs": minion_cfg["model"]["model_kwargs"]}
@@ -98,7 +102,6 @@ def run_session(
             minion_system_template=minion_cfg["agent"]["system_template"],
             minion_instance_template=minion_cfg["agent"]["instance_template"],
             output_dir=output_dir,
-            websearch_path=str(bin_dir / "websearch.py"),
         )
         gru_agent_kwargs = {
             k: v for k, v in gaia_cfg["agent"].items() if k not in ("system_template", "instance_template")

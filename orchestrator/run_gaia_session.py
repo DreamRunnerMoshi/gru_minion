@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """Run the Gru/minion architecture on a single GAIA instance. Sibling of
-run_gru_session.py (SWE-bench) — same CLI shape and cost/session_id machinery, pointed
-at orchestrator.gaia_environment/gaia_model/gaia_config instead of the SWE-bench trio.
+run_gru_session.py (SWE-bench) — same CLI shape, same GruModel/gru_toolcall/
+gru_config (unchanged imports, not GAIA-specific copies — see
+orchestrator/gaia_environment.py's module docstring for why: one architecture, one
+prompt, only the benchmark underneath changes), pointed at orchestrator.gaia_environment
+instead of orchestrator.gru_environment.
 
 No swebench.harness evaluation step needed after the run: GAIA scoring is an inline
 exact-match against the dataset's own "Final answer" field (orchestrator.gaia_scorer),
@@ -32,10 +35,10 @@ from minisweagent.environments.docker import DockerEnvironment  # noqa: E402
 
 from orchestrator.cache_stats import extract_cache_stats, merge_cache_stats  # noqa: E402
 from orchestrator.cost_context import describe_cost_ratio  # noqa: E402
-from orchestrator.gaia_config import load_gaia_config  # noqa: E402
+from orchestrator.gru_config import load_gru_config  # noqa: E402
+from orchestrator.gru_model import GruModel  # noqa: E402
 from orchestrator.gaia_dataset import load_gaia  # noqa: E402
 from orchestrator.gaia_environment import GaiaEnvironment  # noqa: E402
-from orchestrator.gaia_model import GaiaModel  # noqa: E402
 from orchestrator.gaia_scorer import question_scorer  # noqa: E402
 from orchestrator.token_usage import extract_token_usage  # noqa: E402
 
@@ -77,11 +80,12 @@ def main() -> None:
     if instance["file_name"]:
         logger.warning(
             f"task {args.task_id} has an attached file ({instance['file_name']!r}) — this pilot's toolset "
-            "(web_search + python_exec) cannot parse it; expect this run to fail on that basis alone."
+            "(a bash-capable sandbox with no file/image/audio parsing library wired to a tool) cannot use it; "
+            "expect this run to fail on that basis alone."
         )
 
     session_config = load_yaml(CONFIG_DIR / "gaia-session.yaml")
-    gru_config = load_gaia_config(args.gru_config)
+    gru_config = load_gru_config(args.gru_config)
     logger.info(f"Using Gru config: {args.gru_config}")
     minion_config = load_yaml(CONFIG_DIR / "gaia-minion.yaml")
 
@@ -92,7 +96,7 @@ def main() -> None:
     docker_env = DockerEnvironment(**session_config["environment"])
 
     try:
-        gru_model = GaiaModel(
+        gru_model = GruModel(
             model_name=gru_model_name,
             model_kwargs={**gru_config["model"]["model_kwargs"], **({"api_base": args.api_base} if args.api_base else {})},
             policy=gru_config["tool_policy"],
@@ -159,7 +163,6 @@ def main() -> None:
                 "question": instance["Question"],
                 "level": instance["Level"],
                 "answer": answer,
-                "reasoning": gaia_env.final_reasoning,
                 "gold_answer": gold_answer,
                 "resolved": resolved,
                 "exit_status": exit_status,

@@ -1,29 +1,34 @@
-# Gru's runtime config for GAIA. Sibling of orchestrator/config/gru.yaml (SWE-bench) —
-# same fragment-composition mechanism, pointed at orchestrator/prompts/gaia/. No
-# "verification" fragment: unlike SWE-bench, finish() has no self-authored
-# final_verification gate (there's no hidden test suite to approximate — GAIA scores an
-# answer string against a hidden gold answer, done only after the session ends).
+# Gru's runtime config for GAIA. Deliberately NOT a divergent prompt: reuses the exact
+# same system_template_fragments list as orchestrator/config/gru.yaml, loaded through
+# the same orchestrator.gru_config.load_gru_config (see run_gaia_session.py) — one
+# architecture, one prompt, only the benchmark underneath changes. Only instance_template
+# differs, and it's the minimum needed: GAIA has a question, not a PR description and a
+# repository, and finish()'s answer has to come from somewhere since the shared
+# verification.md fragment's final_verification.checks is the only extraction point
+# GAIA has (no git diff to fall back on) — see gaia_environment.py's docstring.
 agent:
   system_template_fragments:
     - role
     - task_approach
     - actions
     - delegation
+    - verification
 
   instance_template: |
     <question>
     {{ task_description }}
     </question>
 
-    Work the task per the system instructions. Start by identifying which sub-facts this question depends on, then take your first step.
+    Work the task per the system instructions. Start by restating what you understand the task to require, then take your first step.
+
+    Your final_verification's last check must print your final answer and nothing else on its last line of output — e.g. `python3 -c "print('<answer>')"` or `echo '<answer>'`. That check's own output is what gets scored, independent of anything you write in your summary.
 
   step_limit: 60
   max_consecutive_format_errors: 6
   cost_limit: 0
   wall_time_limit_seconds: 0
 
-# tool_policy omitted deliberately: defaults (orchestrator/gaia_tools.py's
-# GaiaToolPolicy) are fully permissive.
+# tool_policy omitted deliberately: same fully-permissive default as gru.yaml.
 
 model:
   model_kwargs:
