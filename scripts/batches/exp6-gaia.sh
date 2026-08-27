@@ -1,5 +1,5 @@
 # exp6: the GAIA pilot. Same architecture and prompt as the SWE-bench batches — only
-# the benchmark spec differs (orchestrator/config/gaia/default.yaml), which is the
+# benchmark spec differs (orchestrator/config/gaia/benchmark.yaml), which is the
 # whole point of the port. Needs orchestrator/benchmarks/gaia_sandbox built as a local
 # Docker image, plus HF_TOKEN (gated dataset) and TAVILY_API_KEY (the sandbox's search).
 #

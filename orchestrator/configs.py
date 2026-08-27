@@ -16,5 +16,5 @@ CONFIG_DIR = Path(__file__).parent / "config"
 
 def load_yaml(name: str) -> dict:
     """`name` is a path relative to orchestrator/config/, which groups config by
-    benchmark: 'swe_bench/minion.yaml', 'gaia/default.yaml'."""
+    benchmark: 'swe_bench/minion.yaml', 'gaia/benchmark.yaml'."""
     return yaml.safe_load((CONFIG_DIR / name).read_text())

@@ -5,7 +5,7 @@ Renamed 2026-08-26 from run_gru_session.py (which was itself renamed from
 run_exp2_single.py; git history preserved via `git mv` both times), and merged with
 run_gaia_session.py. The two were the same script apart from which dataset they loaded
 and what they did with the result — both now come from the benchmark named by
-`--benchmark`, resolved through a spec under orchestrator/config/<benchmark>/ and the
+`--benchmark`, resolved through orchestrator/config/<benchmark>/benchmark.yaml and the
 registry in orchestrator/benchmarks/. Adding a third dataset needs no change here.
 
 Originally one shared `--model` for both roles (Phase 1 framework validation, see
@@ -83,10 +83,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--benchmark",
         default="swe_bench",
-        help="Which benchmark spec to run. A bare name is that benchmark's default spec "
-        "(swe_bench -> orchestrator/config/swe_bench/default.yaml); a variant is named with a slash "
-        "(swe_bench/solo, gaia/solo -> .../solo.yaml). Any spec file added to a benchmark's config "
-        "directory is selectable this way.",
+        help="Which benchmark to run. A bare name uses that benchmark's defaults "
+        "(swe_bench -> orchestrator/config/swe_bench/benchmark.yaml); a slash selects one of the "
+        "`variants` declared in the same file (swe_bench/solo, gaia/solo — Gru with delegation "
+        "switched off, for a solo baseline).",
     )
     parser.add_argument("--instance", required=True, help="Instance id within the benchmark (SWE-bench instance_id, GAIA task_id)")
     parser.add_argument("--subset", help="Override the benchmark spec's dataset subset (SWE-bench: lite/verified/...)")

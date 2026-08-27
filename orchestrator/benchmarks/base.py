@@ -18,15 +18,15 @@ a benchmark is four things:
 4. **A verdict** — `finalize()`, producing prediction.json's payload and the
    benchmark-specific half of cost_summary.json.
 
-Which benchmark runs, and which config files it uses, comes from a spec under
-orchestrator/config/<benchmark>/ — see BenchmarkSpec.load() below and
+Which benchmark runs, and which config files it uses, comes from
+orchestrator/config/<benchmark>/benchmark.yaml — see BenchmarkSpec.load() below and
 orchestrator/benchmarks/__init__.py's registry.
 """
 
 from dataclasses import dataclass, field
 from typing import Any
 
-from orchestrator.configs import load_yaml
+from orchestrator.configs import CONFIG_DIR, load_yaml
 from orchestrator.gru.environment import GruEnvironment
 
 
@@ -54,17 +54,19 @@ class Outcome:
 
 @dataclass
 class BenchmarkSpec:
-    """A loaded spec file. Config is grouped by benchmark — everything a GAIA run needs
-    lives in orchestrator/config/gaia/ — so a spec names its siblings by bare filename
-    and this class resolves them against its own directory. `dataset` is passed through
-    to the benchmark as-is: its shape is the loader's own business (SWE-bench wants a
-    subset and split, GAIA only a split).
+    """A loaded orchestrator/config/<benchmark>/benchmark.yaml — one spec per benchmark,
+    sitting alongside the configs it names. Config is grouped by benchmark (everything a
+    GAIA run needs lives in orchestrator/config/gaia/), so a spec names its siblings by
+    bare filename and this class resolves them against its own directory. `dataset` is
+    passed through to the benchmark as-is: its shape is the loader's own business
+    (SWE-bench wants a subset and split, GAIA only a split).
 
-    `name` is what --benchmark was given. A bare name is that benchmark's default spec
-    ("gaia" -> config/gaia/default.yaml); a variant is named with a slash
-    ("gaia/solo" -> config/gaia/solo.yaml), which is how a solo baseline — same dataset
-    and container, a Gru config with delegation switched off — is selected without a
-    parallel top-level config tree."""
+    `name` is what --benchmark was given: a bare benchmark ("gaia", the file's own
+    defaults) or a named variant after a slash ("gaia/solo", those defaults with the
+    spec's `variants.solo` block merged over them). A variant states only what it
+    changes, so the dataset and container are declared once per benchmark and can't
+    drift between arms of the same comparison — which they could when each arm was a
+    separate spec file repeating them."""
 
     name: str
     benchmark: str  # the config directory: "gaia" for both "gaia" and "gaia/solo"
@@ -77,7 +79,22 @@ class BenchmarkSpec:
     @classmethod
     def load(cls, name: str) -> "BenchmarkSpec":
         benchmark, _, variant = name.partition("/")
-        raw = load_yaml(f"{benchmark}/{variant or 'default'}.yaml")["benchmark"]
+        path = CONFIG_DIR / benchmark / "benchmark.yaml"
+        if not path.exists():
+            known = sorted(d.name for d in CONFIG_DIR.iterdir() if (d / "benchmark.yaml").exists())
+            raise SystemExit(f"no benchmark config at {path} — known benchmarks: {', '.join(known)}")
+        raw = load_yaml(f"{benchmark}/benchmark.yaml")["benchmark"]
+        variants = raw.pop("variants", None) or {}
+        if variant:
+            if variant not in variants:
+                raise SystemExit(
+                    f"benchmark {benchmark!r} has no variant {variant!r} — "
+                    f"known: {', '.join(sorted(variants)) or '(none)'}"
+                )
+            overrides = variants[variant]
+            # `dataset` merges key-by-key so a variant can change just the split without
+            # having to restate the subset; everything else is a plain override.
+            raw = {**raw, **overrides, "dataset": {**raw.get("dataset", {}), **overrides.get("dataset", {})}}
         spec = cls(name=name, benchmark=benchmark, **raw)
         # Sibling filenames -> paths under orchestrator/config/, so every caller can hand
         # them straight to load_yaml/load_gru_config.
