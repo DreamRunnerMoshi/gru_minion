@@ -351,6 +351,15 @@ def _validate_delegate(args: dict, policy: ToolPolicy) -> str:
     return ""
 
 
+def validate_delegation(args: dict, policy: ToolPolicy | None = None) -> str:
+    """Public entry to the same validation a delegate_to_minion tool call goes through.
+    Returns "" when the args are acceptable, else the correction text the model would
+    have been shown. Used by orchestrator/delegate.py so a hand-written delegation gets
+    no privileged path — if a model's version of this spec would be rejected, so is this
+    one."""
+    return _validate_delegate(args, policy or ToolPolicy())
+
+
 def _validate_finish(args: dict, policy: ToolPolicy) -> str:
     if "summary" not in args:
         return "finish missing required field 'summary'."

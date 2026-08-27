@@ -67,6 +67,45 @@ Built on [`mini-swe-agent`](https://github.com/SWE-agent/mini-swe-agent) and
 [`litellm`](https://github.com/BerriAI/litellm) for the underlying agent loop and
 model-provider routing.
 
+## Use it in Claude Code
+
+The architecture is packaged as a Claude Code plugin, so you can be Gru yourself: you
+plan and verify, a cheap model does the volume. This is the same code the experiments
+run — a delegation issued from your editor goes through the same environment, the same
+minion runner, and the same independent check re-runs.
+
+```
+/plugin marketplace add DreamRunnerMoshi/gru_minion
+/plugin install gru-minion@gru-minion
+/gru-minion
+```
+
+Needs an `OPENROUTER_API_KEY`. The executor runs through `uvx` with no install step:
+
+```bash
+uvx --from git+https://github.com/DreamRunnerMoshi/gru_minion gru-delegate --help
+```
+
+Or install it properly — `pip install git+https://github.com/DreamRunnerMoshi/gru_minion`
+— which puts `gru-delegate` (one delegation) and `gru-session` (a whole benchmark
+instance, with the `[benchmarks]` extra) on your PATH.
+
+A delegation is a JSON spec validated against the real tool schema, and you get back
+either findings or a PASS/FAIL computed by re-running your own checks:
+
+```bash
+gru-delegate --spec task.json --session .gru/s1
+gru-delegate --session .gru/s1 --summary     # what it cost
+```
+
+**One caveat worth reading before you point it at a repository you care about.** A
+`verdict` delegation tells the minion to leave the working tree containing only its own
+changes and revert anything else. In the benchmark harness that is correct — every run
+gets a throwaway container. Run against your real checkout, "anything else" is your
+uncommitted work. `gru-delegate` refuses a dirty tree for verdict delegations, and takes
+a recoverable `git stash create` snapshot before every delegation regardless, but commit
+first anyway.
+
 ## Repo layout
 
 ```
@@ -87,6 +126,8 @@ orchestrator/config/    One directory per benchmark (swe_bench/, gaia/), each ho
                          environment.yaml it names.
 experiments/exp0 – exp6/    One directory per experiment, each with a NOTES.md write-up,
                          raw trajectories, and real evaluation reports.
+plugins/gru-minion/     The Claude Code plugin: a skill carrying the operating
+                         doctrine, so Claude Code can take the Gru role itself.
 scripts/                Batch runner (run_batch.sh + a spec per experiment under
                          batches/), evaluation and artifact-pull helpers.
 tests/                  Unit + harness tests (fake environments, no live API calls).
