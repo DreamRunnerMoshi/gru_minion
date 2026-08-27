@@ -20,28 +20,26 @@ success.
 
 ## Headline findings
 
-- **92.3%** peak minion token share on a real SWE-bench run (gpt-4.1-nano minion).
-- **3 / 3** independent vendor pairs (Qwen, GLM, GPT-family) where paired mode never
-  underperformed solo, on real SWE-bench instances.
-- Delegation is driven by whether a prompt rule's **content matches the task's actual
-  shape**, not by how forcefully it's worded — a 12-run controlled ablation (same model,
-  same instance, only the prompt changed) found that persona framing ("Master
-  Orchestrator"), a negative constraint ("forbidden from grunt work"), and an explicit
-  "trust your peers" instruction all failed to produce delegation on their own, while a
-  concrete rule tied to the task's real workflow did. See
-  [`experiments/exp4/NOTES.md`](experiments/exp4/NOTES.md) and
-  [`experiments/exp4/DELEGATION_FAILURE_MODES.md`](experiments/exp4/DELEGATION_FAILURE_MODES.md)
-  for the real trajectory excerpts behind each failure mode.
-- Ported the identical architecture and prompt (byte-for-byte — only the sandbox
-  environment changed) from SWE-bench to GAIA, a completely different task shape
-  (open-domain research questions, not code editing). Same model pair went from 14%
-  resolved to 52% resolved just by swapping Gru/minion vendor, isolating a genuine
-  capability difference from a harness or prompt problem.
-- Three infrastructure bugs that would have silently invalidated results were caught and
-  fixed before publishing: a patch-extraction bug that made correct sessions look like
-  failures, a cost-tracking gap that made a real dollar cap a no-op for some models, and
-  — the most significant — a self-authored prompt divergence mid-experiment that was
-  caught, and the confounded batch was deleted and rerun rather than kept.
+| Metric | Result |
+|---|---|
+| Peak minion token share (SWE-bench, gpt-4.1-nano) | **92.3%** |
+| Vendor pairs where paired ≥ solo (SWE-bench, Qwen/GLM/GPT) | **3 / 3** |
+| GAIA resolve rate, same pair, vendor swap only | **14% → 52%** |
+| Live, independently-evaluated runs | **84** |
+| Self-caught infra bugs, fixed pre-publish | **3** |
+| Delegation driver (12-run prompt ablation) | task-fit, not wording forcefulness |
+
+Detail behind the last two rows:
+
+- **Delegation ablation**: persona framing, a negative constraint ("forbidden from grunt
+  work"), and a "trust your peers" instruction all failed alone; a rule tied to the
+  task's actual workflow worked. Trajectory excerpts:
+  [`exp4/NOTES.md`](experiments/exp4/NOTES.md),
+  [`exp4/DELEGATION_FAILURE_MODES.md`](experiments/exp4/DELEGATION_FAILURE_MODES.md).
+- **Bugs caught pre-publish**: a patch-extraction bug hiding correct sessions as
+  failures, a cost-tracking gap making a dollar cap a no-op for some models, and a
+  self-authored prompt divergence mid-experiment — caught, and the confounded batch
+  deleted and rerun rather than kept.
 
 ## Architecture
 
