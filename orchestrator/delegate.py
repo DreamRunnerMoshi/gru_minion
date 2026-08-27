@@ -197,6 +197,7 @@ def main() -> None:
     parser.add_argument("--minion-config", default="general/minion.yaml", help="Minion config under orchestrator/config/. The default is the general-purpose one: real repository, no patch ritual, and forbidden from touching anything it did not create. The benchmark variants (swe_bench/minion.yaml, gaia/minion.yaml) exist to score instances and are not safe against a working tree you care about.")
     parser.add_argument("--cost-limit", type=float, default=0.15, help="Hard dollar cap on this one delegation's agentic session (0 leaves the config's own)")
     parser.add_argument("--summary", action="store_true", help="Print what this session's delegations have cost so far, and exit")
+    parser.add_argument("--benchmark-minion-config", action="store_true", help="Permit a --minion-config outside general/. The benchmark configs instruct the minion to revert changes unrelated to its own task, which is correct in a throwaway scoring container and destructive against a working tree you care about. Only the benchmark harness should pass this.")
     parser.add_argument("--allow-dirty", action="store_true", help="Permit a verdict delegation against a working tree with uncommitted changes. Refused by default — a verdict-mode minion is instructed to revert changes unrelated to its own work, which in a shared tree means yours. See this module's docstring.")
     args = parser.parse_args()
 
@@ -216,6 +217,21 @@ def main() -> None:
     # rejected from a model is rejected here too — no privileged hand-written path.
     if error := validate_delegation(spec):
         parser.error(error)
+
+    # The benchmark minion configs (swe_bench/, gaia/) ship in the same wheel as the
+    # general-purpose one, and their names read as authoritative. They are not safe here:
+    # their Submission steps tell the minion to revert anything in the tree unrelated to
+    # its own delegation, which in a scoring container is correct and against a real
+    # checkout destroyed uncommitted work on the first live run. Reaching one by accident
+    # should not be possible.
+    if not args.minion_config.startswith("general/") and not args.benchmark_minion_config:
+        parser.error(
+            f"refusing --minion-config {args.minion_config!r}: only configs under general/ are safe against a "
+            "working tree you care about. The benchmark configs (swe_bench/, gaia/) instruct the minion to "
+            "revert changes unrelated to its own task — correct when every run gets a throwaway container, "
+            "destructive against a real checkout. Pass --benchmark-minion-config only if you are running the "
+            "benchmark harness."
+        )
 
     # A verdict-mode minion is told to leave the working tree containing only its own
     # changes, and to revert anything else (config/*/minion.yaml, Submission step 1).
