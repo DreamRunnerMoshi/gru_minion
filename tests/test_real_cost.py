@@ -8,9 +8,9 @@ and MinionModel now prefer the response's own real reported cost instead.
 
 from litellm.types.utils import ChatCompletionMessageToolCall, Choices, Function, Message, ModelResponse, Usage
 
-from orchestrator.gru_model import GruModel
-from orchestrator.minion_model import MinionModel
-from orchestrator.real_cost import real_completion_cost
+from orchestrator.gru.model import GruModel
+from orchestrator.minion.model import MinionModel
+from orchestrator.metrics.real_cost import real_completion_cost
 
 
 def _response(usage: Usage) -> ModelResponse:

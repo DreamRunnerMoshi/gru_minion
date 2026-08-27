@@ -1,6 +1,6 @@
 """Covers the fix from experiments/exp3/LOG.md's "RepeatedFormatError fix (2026-08-23)"
 section: GruModel now escalates its correction text as consecutive FormatErrors pile up
-(orchestrator/gru_toolcall.py's _escalation_prefix, orchestrator/gru_model.py's counter),
+(orchestrator/gru/toolcall.py's _escalation_prefix, orchestrator/gru/model.py's counter),
 instead of repeating the same static message every retry. This never got a live-infra
 confirmation before the cloud diagnostic run it was waiting on got stopped mid-session —
 these tests are the offline substitute: deterministic, no GPU, no Ollama.

@@ -4,14 +4,14 @@ prep) is inherited unmodified from LitellmModel.
 
 Revised 2026-08-25 (exp5 start): takes an optional `run_id` and sets
 `model_kwargs["extra_body"]["session_id"]` itself, rather than requiring every call
-site to hand-construct that dict — the bug that motivated this: run_gru_session.py set
+site to hand-construct that dict — the bug that motivated this: run_session.py set
 it correctly, but tests/harness.py's separate GruModel construction silently didn't,
 so a naive test would have shown Gru's own calls with no session_id at all. Owning it
 here means any caller gets consistent behavior for free. See gru_environment.py's
 matching note for why session_id exists (OpenRouter sticky-routing, exp4's cache data).
 
 Revised 2026-08-25 (exp5 start, again): `_calculate_cost` now prefers the response's
-own real reported cost (`orchestrator.real_cost`) over LitellmModel's own calculator,
+own real reported cost (`orchestrator.metrics.real_cost`) over LitellmModel's own calculator,
 which prices from a static registry that doesn't know every model — caught live when
 `openrouter/qwen/qwen3-max`'s real $0.0017/call was silently tracked as $0.0, making
 `--cost-limit` a no-op. See real_cost.py for the full story.
@@ -22,15 +22,15 @@ import litellm
 from minisweagent.exceptions import FormatError
 from minisweagent.models.litellm_model import LitellmModel
 
-from orchestrator.gru_toolcall import ToolPolicy, build_tools, format_gru_observation_messages, parse_gru_actions
-from orchestrator.real_cost import real_completion_cost
+from orchestrator.gru.toolcall import ToolPolicy, build_tools, format_gru_observation_messages, parse_gru_actions
+from orchestrator.metrics.real_cost import real_completion_cost
 
 
 class GruModel(LitellmModel):
     def __init__(self, *, policy: ToolPolicy | None = None, run_id: str = "test-session", **kwargs):
         super().__init__(**kwargs)
         # Which of Gru's actions/fields this session actually offers — added 2026-08-24
-        # for bit-by-bit prompt experimentation (orchestrator/prompt_fragments.py).
+        # for bit-by-bit prompt experimentation (orchestrator/gru/prompts.py).
         # Defaults to the original fully-permissive behavior.
         self._policy = policy or ToolPolicy()
         self._tools = build_tools(self._policy)

@@ -2,7 +2,7 @@
 # Evaluate exp3 arm B AND re-verify exp2 in one pass, then build the results table.
 # Runs on a Docker-capable machine (the harness VM, or a fresh GPU-less VM).
 #
-#   scripts/evaluate.sh B ollama_chat/qwen3.8:27b
+#   scripts/exp3_evaluate.sh B ollama_chat/qwen3.8:27b
 #
 # exp2 is bundled deliberately: it grades the same five astropy instances, so the
 # expensive part (pulling per-instance images) is paid once and serves both, and both
@@ -11,7 +11,7 @@
 # transcribed for 4 of 5 instances (review.md R3).
 set -uo pipefail
 
-ARM="${1:?usage: evaluate.sh <results-label> <model-string>}"
+ARM="${1:?usage: exp3_evaluate.sh <results-label> <model-string>}"
 MODEL="${2:?}"
 INSTANCES="astropy__astropy-12907 astropy__astropy-14182 astropy__astropy-14365 astropy__astropy-14995 astropy__astropy-6938"
 PYTHON="${PYTHON:-$(command -v python3)}"

@@ -1,5 +1,5 @@
 """A factual, non-prescriptive sentence about Gru/minion cost and vendor — injected
-into the prompt as `{{ cost_context }}` (see orchestrator/prompts/gru/role.md).
+into the prompt as `{{ cost_context }}` (see orchestrator/gru/prompts/role.md).
 
 Added 2026-08-24: the prompt previously said only "cheaper," with no magnitude, and a
 sentence explicitly pre-authorizing zero delegation as "a legitimate outcome, not a

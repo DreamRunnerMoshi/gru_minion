@@ -56,9 +56,10 @@ either "findings" — investigate and report back — or "verdict" — do it and
 and `run_check` (Gru's own independently re-run verification, never trusting a minion's
 self-report of success — the "verifiability trap": once a real mechanical check has
 settled a result, Gru trusts the check, not the report). The tool schema and shared
-prompt fragments (`orchestrator/prompts/gru/*.md`) are identical across every benchmark
-this project targets — only the environment underneath (`GruEnvironment` /
-`GaiaEnvironment`) and the per-benchmark `instance_template` change. This is a deliberate
+prompt fragments (`orchestrator/gru/prompts/*.md`) are identical across every benchmark
+this project targets — only the benchmark module underneath
+(`orchestrator/benchmarks/`, which supplies the dataset, the container and what a passing
+`finish()` submits) and the per-benchmark `instance_template` change. This is a deliberate
 constraint: the point of porting to a new benchmark is to hold the architecture and
 prompt fixed and see what moves, not to re-tune the prompt per benchmark.
 
@@ -69,14 +70,24 @@ model-provider routing.
 ## Repo layout
 
 ```
-orchestrator/           Core harness: Gru's tool schema, environments (SWE-bench + GAIA),
-                         prompt composition, cost/cache tracking, config loading.
-orchestrator/prompts/gru/   Shared prompt fragments — the same files across every benchmark.
-orchestrator/config/    YAML configs: model pairs, prompt-fragment lists, tool policy,
+orchestrator/           Core harness. run_session.py (one entrypoint, any benchmark),
+                         session.py (wiring + cost accounting), configs.py.
+orchestrator/gru/       The planning role: tool schema, model wrapper, config loading,
+                         the benchmark-agnostic action loop, and prompts/ — the shared
+                         prompt fragments, the same files across every benchmark.
+orchestrator/minion/    The execution role: model wrapper and the delegation runner
+                         (oneshot single call vs. agentic bash loop).
+orchestrator/benchmarks/    One module per dataset behind a common interface (base.py):
+                         swebench.py, gaia.py, plus GAIA's dataset loader, scorer and
+                         gaia_sandbox/ (Dockerfile + tools for its network-enabled sandbox).
+orchestrator/metrics/   Token, cache, real-cost and localization-coverage accounting.
+orchestrator/config/    YAML configs: benchmarks/ (which dataset + which configs a run
+                         uses), model kwargs, prompt-fragment lists, tool policy,
                          per-benchmark instance templates (gru.yaml, gaia.yaml, *-solo.yaml).
-orchestrator/gaia_sandbox/  Dockerfile + tools for GAIA's network-enabled sandbox.
 experiments/exp0 – exp6/    One directory per experiment, each with a NOTES.md write-up,
                          raw trajectories, and real evaluation reports.
+scripts/                Batch runner (run_batch.sh + a spec per experiment under
+                         batches/), evaluation and artifact-pull helpers.
 tests/                  Unit + harness tests (fake environments, no live API calls).
 literature-review/      Notes on prior art and related benchmarks.
 docs/                   Architecture diagram.
@@ -107,25 +118,39 @@ export HF_TOKEN=...           # GAIA only, needs approved dataset access
 SWE-bench:
 
 ```bash
-python -m orchestrator.run_gru_session \
+python -m orchestrator.run_session --benchmark swe_bench \
   --instance astropy__astropy-14182 \
   --gru-model openrouter/z-ai/glm-4.6 \
   --minion-model openrouter/z-ai/glm-4.5-air \
   --output-dir results/my-run
 ```
 
-GAIA (needs `orchestrator/gaia_sandbox` built as a local Docker image first):
+GAIA (needs `orchestrator/benchmarks/gaia_sandbox` built as a local Docker image first):
 
 ```bash
-python -m orchestrator.run_gaia_session \
-  --task-id <gaia-task-id> \
+python -m orchestrator.run_session --benchmark gaia \
+  --instance <gaia-task-id> \
   --gru-model openrouter/google/gemini-3.7-flash \
   --minion-model openrouter/deepseek/deepseek-v3.2 \
   --output-dir results/my-gaia-run
 ```
 
-Pass `--gru-config gru-solo.yaml` (or `gaia-solo.yaml`) to run Gru without any
-delegation available, for a solo baseline comparison. `orchestrator/analyze_run.py`
+`--benchmark` names a spec under `orchestrator/config/benchmarks/`, which is what
+decides the dataset, the sandbox and the config files a run uses; `swe_bench_solo` /
+`gaia_solo` run Gru with no delegation available at all, for a solo baseline comparison.
+Adding a dataset means adding a module under `orchestrator/benchmarks/` and a spec file
+— nothing in the runner changes.
+
+A sweep of many instances runs through `scripts/run_batch.sh`, which takes a spec file
+naming the instances, the model pairs and the arms (each arm is just a benchmark spec,
+so solo-vs-paired is a config choice):
+
+```bash
+nohup scripts/run_batch.sh scripts/batches/exp5-cross-vendor.sh > exp5_batch.log 2>&1 &
+scripts/evaluate_batch.sh experiments/exp5/results experiments/exp5/reports exp5
+```
+
+`orchestrator/analyze_run.py`
 turns a batch of result directories into a results table merged against a real
 evaluation report.
 

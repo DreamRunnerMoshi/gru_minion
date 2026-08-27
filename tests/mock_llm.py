@@ -1,7 +1,7 @@
 """Fake `litellm.completion` for testing the Gru/minion harness without a real model.
 
 Both GruModel, GruEnvironment's oneshot path, and the minion's LitellmModel all call
-`litellm.completion(...)` directly (see orchestrator/gru_model.py, gru_environment.py,
+`litellm.completion(...)` directly (see orchestrator/gru/model.py, gru_environment.py,
 and minisweagent's litellm_model.py) — always via the `litellm` module attribute, never
 a `from litellm import completion` import. That means patching `litellm.completion`
 itself (not a per-module reference) intercepts every one of them uniformly, which is

@@ -260,7 +260,7 @@ exactly that thing:
 - **Run 3 → 4**: `boundaries.md` (added run 3, for an unrelated reason) was being read as
   a reason *against* delegating — *"I could hand it off to the minion, but given the
   boundary constraints around test file modifications, it's better to make the source
-  edit myself"* (turn 26, screenshot: [interesting_gru.png](../../docs/interesting_gru.png)).
+  edit myself"* (turn 26).
   Adding an explicit trust statement didn't change the outcome, but turn 24 shows Gru
   explicitly weighing the prompt's own wording against itself: *"the instructions
   explicitly say delegate to minion if work can be done cheaper... I judged simple.

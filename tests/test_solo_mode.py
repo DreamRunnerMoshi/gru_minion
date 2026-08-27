@@ -1,10 +1,10 @@
 """gru-solo.yaml (2026-08-25, exp5): a genuine no-minion baseline, for the comparison
 this project has never actually run — the same model working a task alone vs. as Gru
 with a minion. `tool_policy.allow_delegate: false` removes delegate_to_minion from the
-tool set entirely (orchestrator/gru_toolcall.py), not just discourages it.
+tool set entirely (orchestrator/gru/toolcall.py), not just discourages it.
 """
 
-from orchestrator.gru_config import load_gru_config
+from orchestrator.gru.config import load_gru_config
 from tests.harness import run_session
 from tests.mock_llm import Text, Tool
 

@@ -1,15 +1,21 @@
-"""Wires up one Gru session against a disposable local git repo instead of a real
-SWE-bench Docker container, and against a ScriptedLLM instead of real Ollama. This is
-the same wiring orchestrator/run_gru_session.py does (GruModel + GruEnvironment +
-DefaultAgent), minus the SWE-bench dataset load and Docker container — those are the
-two things that cost real time/infra and aren't what's under test when the question is
-"does the harness's own control flow do the right thing."
+"""Wires up one Gru session against a disposable local directory instead of a real
+benchmark container, and against a ScriptedLLM instead of a real model. This is the same
+wiring orchestrator/run_session.py does — it calls the same
+orchestrator.session.build_session — minus the dataset load and the Docker container:
+the two things that cost real time/infra and aren't what's under test when the question
+is "does the harness's own control flow do the right thing."
 
 Swapping DockerEnvironment for mini-swe-agent's own LocalEnvironment is not a stand-in
 implementation: it is the library's other supported environment, running real shell
 commands (git, sed, cat, ...) against a real (temporary, disposable) directory — so
-run_check's write-rejection, the minion's actual bash tool loop, and `git diff` patch
-extraction are all exercised for real. Only the model call is fake.
+run_check, the minion's actual bash tool loop, and `git diff` patch extraction are all
+exercised for real. Only the model call is fake.
+
+Benchmark-parameterised (2026-08-26): the same function drives a SWE-bench session
+against a scratch git repo and a GAIA session against a scratch workspace, since
+`build_session` is now benchmark-agnostic and the benchmark supplies only its own
+environment class and prompt variables. `tests/gaia_harness.py` is the GAIA-shaped entry
+point into it.
 """
 
 import subprocess
@@ -19,27 +25,19 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
-import yaml
-
 from minisweagent.agents.default import DefaultAgent
 from minisweagent.environments.local import LocalEnvironment
 
-from orchestrator.cost_context import describe_cost_ratio
-from orchestrator.gru_config import load_gru_config
-from orchestrator.gru_environment import GruEnvironment
-from orchestrator.gru_model import GruModel
+from orchestrator.benchmarks import get_benchmark
+from orchestrator.benchmarks.base import Task
+from orchestrator.gru.environment import GruEnvironment
+from orchestrator.session import build_session, run_task
 from tests.mock_llm import ScriptedLLM, Step
-
-CONFIG_DIR = Path(__file__).parent.parent / "orchestrator" / "config"
-
-
-def load_yaml(name: str) -> dict:
-    return yaml.safe_load((CONFIG_DIR / name).read_text())
 
 
 class ScratchEnvironment(LocalEnvironment):
-    """LocalEnvironment plus the no-op `cleanup()` GruEnvironment's caller expects from
-    a DockerEnvironment-shaped object; nothing to tear down for a plain directory."""
+    """LocalEnvironment plus the no-op `cleanup()` a benchmark's caller expects from a
+    DockerEnvironment-shaped object; nothing to tear down for a plain directory."""
 
     def cleanup(self) -> None:
         pass
@@ -71,6 +69,52 @@ class Session:
     llm: ScriptedLLM
     repo: Path
 
+    @property
+    def gaia_env(self) -> GruEnvironment:
+        """Alias for GAIA tests, which talk about the same object by its own name."""
+        return self.gru_env
+
+    @property
+    def workdir(self) -> Path:
+        return self.repo
+
+
+def run_benchmark_session(
+    *,
+    benchmark_name: str,
+    shell_env: ScratchEnvironment,
+    workdir: Path,
+    steps: list[Step],
+    task: Task,
+    gru_config: str | None = None,
+    output_dir: Path | None = None,
+) -> Session:
+    """Runs one full Gru session (real config, real prompts, real DefaultAgent loop,
+    real benchmark environment class) against a scratch directory and a scripted model,
+    and returns everything a test would want to inspect: the agent's own result dict
+    (exit_status/submission), the environment (minion_records, gru_action_log), and the
+    raw ScriptedLLM (every call it received, for asserting on what the model was actually
+    told — e.g. that an escalation warning reached it)."""
+    benchmark = get_benchmark(benchmark_name)
+    llm = ScriptedLLM(steps)
+    with patch("litellm.completion", llm):
+        session = build_session(
+            benchmark=benchmark,
+            shell_env=shell_env,
+            gru_model_name="mock/gru",
+            minion_model_name="mock/minion",
+            gru_config_name=gru_config,
+            output_dir=output_dir,
+        )
+        start = time.time()
+        # run_task already turns a crash into a not-Submitted result, the same way a
+        # real run does — so a scripted test can assert on exit_status without having to
+        # catch the harness's own exceptions.
+        result = run_task(session, task)
+        result.setdefault("_wall_clock", time.time() - start)
+
+    return Session(result=result, gru_agent=session.gru_agent, gru_env=session.gru_env, llm=llm, repo=workdir)
+
 
 def run_session(
     *,
@@ -78,65 +122,25 @@ def run_session(
     steps: list[Step],
     task_description: str = "Fix the bug described in the task.",
     repo_files: dict[str, str] | None = None,
-    gru_config: str = "gru.yaml",
+    gru_config: str | None = None,
     output_dir: Path | None = None,
 ) -> Session:
-    """Runs one full Gru session (real config, real prompts, real DefaultAgent loop)
-    against a scratch repo and a scripted model, and returns everything a test would
-    want to inspect: the DefaultAgent's own result dict (exit_status/submission), the
-    trajectory, the GruEnvironment (minion_records, gru_action_log), and the raw
-    ScriptedLLM (every call it received, for asserting on what the model was actually
-    told — e.g. that an escalation warning reached it)."""
+    """SWE-bench-shaped session against a scratch git repo."""
     repo = make_scratch_repo(tmp_path, repo_files)
-    env = ScratchEnvironment(cwd=str(repo))
-
-    gru_cfg = load_gru_config(gru_config)
-    minion_cfg = load_yaml("minion.yaml")
-
-    llm = ScriptedLLM(steps)
-    with patch("litellm.completion", llm):
-        gru_model = GruModel(
-            model_name="mock/gru", model_kwargs=gru_cfg["model"]["model_kwargs"], policy=gru_cfg["tool_policy"]
-        )
-        minion_model_kwargs = {"model_name": "mock/minion", "model_kwargs": minion_cfg["model"]["model_kwargs"]}
-        minion_agent_kwargs = {
-            k: v for k, v in minion_cfg["agent"].items() if k not in ("system_template", "instance_template")
-        }
-        gru_env = GruEnvironment(
-            docker_env=env,
-            minion_model_kwargs=minion_model_kwargs,
-            minion_agent_kwargs=minion_agent_kwargs,
-            minion_system_template=minion_cfg["agent"]["system_template"],
-            minion_instance_template=minion_cfg["agent"]["instance_template"],
-            output_dir=output_dir,
-        )
-        gru_agent_kwargs = {
-            k: v for k, v in gru_cfg["agent"].items() if k not in ("system_template", "instance_template")
-        }
-        gru_agent = DefaultAgent(
-            gru_model,
-            gru_env,
-            system_template=gru_cfg["agent"]["system_template"],
-            instance_template=gru_cfg["agent"]["instance_template"],
-            output_path=(output_dir / "gru.traj.json") if output_dir else None,
-            **gru_agent_kwargs,
-        )
-        gru_env.gru_agent = gru_agent
-
-        start = time.time()
-        try:
-            result = gru_agent.run(
-                task_description=task_description,
-                repo_name="mock-repo",
-                repo_path_or_access_instructions=str(repo),
-                # role.md's {{ cost_context }} needs a value (StrictUndefined) — "mock/gru"
-                # and "mock/minion" have no real pricing, so this always resolves to "".
-                cost_context=describe_cost_ratio("mock/gru", "mock/minion"),
-            )
-        except Exception as e:
-            # Same crash-safety fallback run_gru_session.py uses, so a scripted test can
-            # assert on exit_status without needing to catch the harness's own exceptions.
-            result = {"submission": "", "exit_status": f"Crashed:{type(e).__name__}:{e}"}
-        result.setdefault("_wall_clock", time.time() - start)
-
-    return Session(result=result, gru_agent=gru_agent, gru_env=gru_env, llm=llm, repo=repo)
+    return run_benchmark_session(
+        benchmark_name="swe_bench",
+        shell_env=ScratchEnvironment(cwd=str(repo)),
+        workdir=repo,
+        steps=steps,
+        task=Task(
+            instance_id="mock__instance-1",
+            prompt_vars={
+                "task_description": task_description,
+                "repo_name": "mock-repo",
+                "repo_path_or_access_instructions": str(repo),
+            },
+            raw={},
+        ),
+        gru_config=gru_config,
+        output_dir=output_dir,
+    )

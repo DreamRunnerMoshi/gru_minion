@@ -8,10 +8,10 @@ own `usage.cost` field, which OpenRouter always populates for real (confirmed:
 on every request). When a model isn't in litellm's static registry (true for Qwen3-max,
 untested but plausibly true for others outside the DeepSeek pair this project validated
 earlier), `completion_cost()` raises, and `MSWEA_COST_TRACKING=ignore_errors`
-(`run_gru_session.py`) silently swallows that to `cost=0.0` — no warning, no exception.
+(`run_session.py`) silently swallows that to `cost=0.0` — no warning, no exception.
 
 The practical consequence: `--cost-limit`/`--minion-cost-limit` (real, enforced caps —
-see run_gru_session.py's 2026-08-25 revision notes) becomes a silent no-op for any such
+see run_session.py's 2026-08-25 revision notes) becomes a silent no-op for any such
 model, bounded only by step_limit turns, not dollars. A live batch was running against
 exactly this gap when it was caught (one qwen3-max call: real OpenRouter cost $0.0017,
 mini-swe-agent's own tracking: $0.0) and had to be stopped and fixed before continuing.

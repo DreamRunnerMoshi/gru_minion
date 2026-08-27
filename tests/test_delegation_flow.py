@@ -41,7 +41,7 @@ def test_agentic_verdict_delegation_runs_for_real_and_gru_reverifies(tmp_path):
     assert "FIXED" in session.result["submission"]  # the git diff patch
 
     # returns="verdict" delegations must not show the minion's own claim to Gru — only
-    # a real check's pass/fail (orchestrator/gru_environment.py's returns=="verdict" branch).
+    # a real check's pass/fail (orchestrator/gru/environment.py's returns=="verdict" branch).
     [record] = session.gru_env.minion_records
     assert record["returns"] == "verdict"
     assert record["mode"] == "agentic"
@@ -52,7 +52,7 @@ def test_verdict_delegation_shows_gru_the_summary_but_not_the_raw_patch(tmp_path
     entirely (only PASS/FAIL). Now the minion compiles summary.md before submitting
     (config/minion.yaml's verdict Submission steps) and Gru is shown that summary — but
     still never the raw patch, so the check result stays the only thing that decides
-    correctness (orchestrator/gru_environment.py's _split_verdict_submission)."""
+    correctness (orchestrator/gru/environment.py's _split_verdict_submission)."""
     delegate = Tool(
         "delegate_to_minion",
         {
@@ -88,7 +88,7 @@ def test_openrouter_session_id_is_stable_per_conversation_distinct_per_delegatio
     """2026-08-25 (exp5 start): every call carries extra_body.session_id for OpenRouter
     sticky routing — one id for Gru's whole session, a distinct one per delegation (each
     delegation is its own conversation with its own prefix, not a continuation of Gru's
-    or of any other delegation's). See orchestrator/gru_environment.py's matching
+    or of any other delegation's). See orchestrator/gru/environment.py's matching
     2026-08-25 revision note for why this exists."""
     delegate_one = Tool(
         "delegate_to_minion",
