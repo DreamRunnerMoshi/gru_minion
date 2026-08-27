@@ -20,12 +20,18 @@ success.
 
 ## Headline findings
 
+| Vendor pair (Gru → minion) | Minion token share |
+|---|---|
+| Qwen: `qwen3-max` → `qwen3-coder-flash` | **78.6%** |
+| GLM: `glm-4.6` → `glm-4.5-air` | **61.6%** (SWE-bench), **69.7%** (GAIA) |
+| GPT: `gpt-5-mini` → `gpt-4.1-nano` | **92.3%** |
+
+All three paired never underperformed their own solo baseline, on real SWE-bench
+evaluation. A few more findings worth calling out:
+
 | Metric | Result |
 |---|---|
-| Peak minion token share (SWE-bench, gpt-4.1-nano) | **92.3%** |
-| Vendor pairs where paired ≥ solo (SWE-bench, Qwen/GLM/GPT) | **3 / 3** |
 | GAIA resolve rate, same pair, vendor swap only | **14% → 52%** |
-| Live, independently-evaluated runs | **84** |
 | Self-caught infra bugs, fixed pre-publish | **3** |
 | Delegation driver (12-run prompt ablation) | task-fit, not wording forcefulness |
 
