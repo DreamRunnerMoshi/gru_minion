@@ -18,7 +18,7 @@ from orchestrator.gru.toolcall import ToolPolicy
 
 
 def load_gru_config(filename: str) -> dict:
-    """filename is e.g. 'gru.yaml', under orchestrator/config/. Returns the raw dict
+    """filename is a path under orchestrator/config/, e.g. 'swe_bench/gru.yaml'. Returns the raw dict
     with agent.system_template guaranteed present and top-level 'tool_policy' replaced
     by an actual ToolPolicy instance (not the raw dict)."""
     raw = load_yaml(filename)

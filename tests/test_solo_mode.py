@@ -10,7 +10,7 @@ from tests.mock_llm import Text, Tool
 
 
 def test_solo_config_never_offers_delegate_to_minion():
-    cfg = load_gru_config("gru-solo.yaml")
+    cfg = load_gru_config("swe_bench/gru-solo.yaml")
     assert cfg["tool_policy"].allow_delegate is False
     assert "delegate_to_minion" not in cfg["agent"]["system_template"]
     assert "minion" not in cfg["agent"]["system_template"].lower()
@@ -26,7 +26,7 @@ def test_solo_session_completes_without_ever_delegating(tmp_path):
         Tool("finish", {"summary": "fixed", "final_verification": {"checks": ["grep -q FIXED README.md"]}}),
     ]
     session = run_session(
-        tmp_path=tmp_path, steps=steps, repo_files={"README.md": "foo\n"}, gru_config="gru-solo.yaml"
+        tmp_path=tmp_path, steps=steps, repo_files={"README.md": "foo\n"}, gru_config="swe_bench/gru-solo.yaml"
     )
 
     assert session.result["exit_status"] == "Submitted"
@@ -50,7 +50,7 @@ def test_solo_session_rejects_a_delegate_to_minion_attempt(tmp_path):
         Tool("finish", {"summary": "fixed", "final_verification": {"checks": ["true"]}}),
     ]
     session = run_session(
-        tmp_path=tmp_path, steps=steps, repo_files={"README.md": "foo\n"}, gru_config="gru-solo.yaml"
+        tmp_path=tmp_path, steps=steps, repo_files={"README.md": "foo\n"}, gru_config="swe_bench/gru-solo.yaml"
     )
 
     # The FormatError correction (a "user" role message) must have told the model

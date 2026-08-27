@@ -55,7 +55,7 @@ ONESHOT_SYSTEM = (
 
 def split_verdict_submission(submission: str) -> tuple[str, str]:
     """A verdict-mode minion submits summary.md then patch.txt, separated by
-    VERDICT_SUMMARY_MARKER (see config/minion.yaml's Submission steps). Split them —
+    VERDICT_SUMMARY_MARKER (see the minion config's Submission steps). Split them —
     Gru gets the summary, never the raw patch; the check result is still what decides
     pass/fail. No marker (e.g. a oneshot verdict, or a minion that didn't follow the
     ritual) degrades to treating the whole submission as the summary."""
@@ -116,7 +116,7 @@ class MinionRunner:
         output_dir: Path | None = None,
         run_id: str = "test-session",
     ) -> "MinionRunner":
-        """Build from a loaded minion config (config/minion.yaml or its GAIA sibling):
+        """Build from a loaded minion config (each benchmark's own config/<name>/minion.yaml):
         the agent block minus its two prompt templates becomes the agent kwargs, the
         model block becomes the model kwargs. `cost_limit > 0` overrides the config's
         own (this is --minion-cost-limit: a hard, real per-delegation dollar cap

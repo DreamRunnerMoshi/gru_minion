@@ -37,7 +37,7 @@ next" a guess; (2) exp4 runs 5-7 all failed real SWE-bench evaluation because a
 delegation's `verification.checks` were too narrow (never tested the read-path half of
 the fix) and Gru never saw what was actually changed, so had no chance to notice the gap
 itself. Now the minion always compiles a short summary of what it did (see
-config/minion.yaml's verdict-mode Submission steps) and that summary — never the raw
+the minion config's verdict-mode Submission steps) and that summary — never the raw
 patch — is shown alongside the check's real pass/fail. The check result stays the only
 thing that decides PASS/FAIL; the summary is explicitly labeled as not to be trusted for
 correctness, only for "what happened."

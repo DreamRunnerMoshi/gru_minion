@@ -8,16 +8,15 @@
 # three model pairs, five instances and solo/paired arms hardcoded in it — so exp3's
 # sweep needed a second script (run_arm.sh, now folded in here) and exp6's GAIA runs had
 # no script at all. What varies per experiment now lives in a spec file under
-# scripts/batches/; what varies per benchmark lives in orchestrator/config/benchmarks/.
+# scripts/batches/; what varies per benchmark lives in orchestrator/config/<benchmark>/.
 #
 # The spec is a sourced bash file setting:
 #   OUT_ROOT           where results go, e.g. experiments/exp5/results   (required)
 #   INSTANCES=(...)    instance ids to run                               (required)
 #   PAIRS=(...)        "label|gru-model|minion-model" per model pair     (required)
-#   ARMS=(...)         "label|benchmark-spec" per arm; benchmark-spec is a filename
-#                      under orchestrator/config/benchmarks/ without .yaml. An empty
-#                      arm label drops the suffix from the output path.
-#                      Default: ("|swe_bench")
+#   ARMS=(...)         "label|benchmark-spec" per arm, where benchmark-spec is what
+#                      --benchmark takes ("gaia", "gaia/solo"). An empty arm label
+#                      drops the suffix from the output path. Default: ("|swe_bench")
 #   API_BASE           for self-hosted serving; omitted for hosted APIs   (optional)
 #   RESERVE            stop launching once the OpenRouter balance drops below this;
 #                      empty or unset disables the budget check entirely  (optional)

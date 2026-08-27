@@ -55,8 +55,8 @@ def build_session(
     """`shell_env` is the one shared container (or, in tests, LocalEnvironment) that Gru's
     checks and every delegation run against. The config names default to the benchmark
     spec's; passing them explicitly is how an A/B against an alternate prompt is run."""
-    gru_config = load_gru_config(gru_config_name or benchmark.spec.gru_config)
-    minion_config = load_yaml(minion_config_name or benchmark.spec.minion_config)
+    gru_config = load_gru_config(gru_config_name or benchmark.spec.gru)
+    minion_config = load_yaml(minion_config_name or benchmark.spec.minion)
 
     gru_model = GruModel(
         model_name=gru_model_name,
@@ -77,7 +77,7 @@ def build_session(
         env=shell_env,
         minions=minions,
         output_dir=output_dir,
-        logger=logging.getLogger(f"{benchmark.name}.environment"),
+        logger=logging.getLogger(f"{benchmark.spec.benchmark}.environment"),
         run_id=run_id,
     )
 

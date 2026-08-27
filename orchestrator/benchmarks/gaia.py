@@ -68,7 +68,7 @@ class GaiaBenchmark(Benchmark):
         )
 
     def open_environment(self, task: Task) -> Any:
-        return DockerEnvironment(**self.session_config["environment"])
+        return DockerEnvironment(**self.environment_config["environment"])
 
     def finalize(self, *, task: Task, result: dict, env: GaiaEnvironment, model_name: str) -> Outcome:
         answer = result.get("submission", "") or env.final_answer or ""

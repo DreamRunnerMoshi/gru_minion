@@ -18,8 +18,8 @@ a benchmark is four things:
 4. **A verdict** — `finalize()`, producing prediction.json's payload and the
    benchmark-specific half of cost_summary.json.
 
-Which benchmark runs, and which config files it uses, comes from
-orchestrator/config/benchmarks/<name>.yaml — see load_spec() below and
+Which benchmark runs, and which config files it uses, comes from a spec under
+orchestrator/config/<benchmark>/ — see BenchmarkSpec.load() below and
 orchestrator/benchmarks/__init__.py's registry.
 """
 
@@ -54,21 +54,37 @@ class Outcome:
 
 @dataclass
 class BenchmarkSpec:
-    """A loaded orchestrator/config/benchmarks/<name>.yaml. `dataset` is passed through
-    to the benchmark as-is — its shape is the loader's own business (SWE-bench wants a
-    subset and split, GAIA only a split)."""
+    """A loaded spec file. Config is grouped by benchmark — everything a GAIA run needs
+    lives in orchestrator/config/gaia/ — so a spec names its siblings by bare filename
+    and this class resolves them against its own directory. `dataset` is passed through
+    to the benchmark as-is: its shape is the loader's own business (SWE-bench wants a
+    subset and split, GAIA only a split).
+
+    `name` is what --benchmark was given. A bare name is that benchmark's default spec
+    ("gaia" -> config/gaia/default.yaml); a variant is named with a slash
+    ("gaia/solo" -> config/gaia/solo.yaml), which is how a solo baseline — same dataset
+    and container, a Gru config with delegation switched off — is selected without a
+    parallel top-level config tree."""
 
     name: str
+    benchmark: str  # the config directory: "gaia" for both "gaia" and "gaia/solo"
     loader: str
     dataset: dict[str, Any] = field(default_factory=dict)
-    session_config: str = "session.yaml"
-    gru_config: str = "gru.yaml"
-    minion_config: str = "minion.yaml"
+    environment: str = "environment.yaml"
+    gru: str = "gru.yaml"
+    minion: str = "minion.yaml"
 
     @classmethod
     def load(cls, name: str) -> "BenchmarkSpec":
-        raw = load_yaml(f"benchmarks/{name}.yaml")["benchmark"]
-        return cls(name=name, **raw)
+        benchmark, _, variant = name.partition("/")
+        raw = load_yaml(f"{benchmark}/{variant or 'default'}.yaml")["benchmark"]
+        spec = cls(name=name, benchmark=benchmark, **raw)
+        # Sibling filenames -> paths under orchestrator/config/, so every caller can hand
+        # them straight to load_yaml/load_gru_config.
+        spec.environment = f"{benchmark}/{spec.environment}"
+        spec.gru = f"{benchmark}/{spec.gru}"
+        spec.minion = f"{benchmark}/{spec.minion}"
+        return spec
 
 
 class Benchmark:
@@ -80,7 +96,7 @@ class Benchmark:
 
     def __init__(self, spec: BenchmarkSpec):
         self.spec = spec
-        self.session_config = load_yaml(spec.session_config)
+        self.environment_config = load_yaml(spec.environment)
 
     @property
     def name(self) -> str:
@@ -96,8 +112,9 @@ class Benchmark:
     # -- 2. shell environment --
 
     def open_environment(self, task: Task) -> Any:
-        """Start the one shared container the whole session runs against. The returned
-        object must have DockerEnvironment's `execute()`/`cleanup()` shape."""
+        """Start the one shared container the whole session runs against, configured by
+        the spec's `environment` file. The returned object must have DockerEnvironment's
+        `execute()`/`cleanup()` shape."""
         raise NotImplementedError
 
     # -- 3. Gru's environment (shared; the subclass only varies build_submission) --

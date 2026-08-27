@@ -1,6 +1,6 @@
 """Registry: benchmark name -> the Benchmark subclass that implements it.
 
-`loader` in orchestrator/config/benchmarks/<name>.yaml picks the entry, so pointing the
+`loader` in orchestrator/config/<benchmark>/<spec>.yaml picks the entry, so pointing the
 orchestrator at a different dataset is a config change, not a code change — and adding a
 third benchmark means adding a module here plus its config file, with nothing in
 orchestrator/run_session.py to touch.
@@ -23,7 +23,8 @@ LOADERS = {
 
 
 def get_benchmark(name: str) -> Benchmark:
-    """`name` is a config file under orchestrator/config/benchmarks/ (without .yaml)."""
+    """`name` is a benchmark's config directory, optionally with a spec variant after a
+    slash: "gaia" -> config/gaia/default.yaml, "gaia/solo" -> config/gaia/solo.yaml."""
     spec = BenchmarkSpec.load(name)
     if spec.loader not in LOADERS:
         raise SystemExit(f"unknown benchmark loader {spec.loader!r} — known: {', '.join(sorted(LOADERS))}")

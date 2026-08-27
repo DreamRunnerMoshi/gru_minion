@@ -123,19 +123,19 @@ No copy lives in this file (see the ninth revision note above for why). To see e
 
 ```bash
 # system prompt, placeholder unresolved (as stored):
-.venv/bin/python -c "from orchestrator.gru.config import load_gru_config; print(load_gru_config('gru.yaml')['agent']['system_template'])"
+.venv/bin/python -c "from orchestrator.gru.config import load_gru_config; print(load_gru_config('swe_bench/gru.yaml')['agent']['system_template'])"
 
 # system prompt, placeholder resolved for a real model pair:
 .venv/bin/python -c "
 from orchestrator.gru.config import load_gru_config
 from orchestrator.cost_context import describe_cost_ratio
-tmpl = load_gru_config('gru.yaml')['agent']['system_template']
+tmpl = load_gru_config('swe_bench/gru.yaml')['agent']['system_template']
 ctx = describe_cost_ratio('openrouter/deepseek/deepseek-v4-pro-0813', 'openrouter/deepseek/deepseek-v4-flash-0731')
 print(tmpl.replace('{{ cost_context }}', ctx))
 "
 
 # instance/task template:
-.venv/bin/python -c "from orchestrator.gru.config import load_gru_config; print(load_gru_config('gru.yaml')['agent']['instance_template'])"
+.venv/bin/python -c "from orchestrator.gru.config import load_gru_config; print(load_gru_config('swe_bench/gru.yaml')['agent']['instance_template'])"
 ```
 
 ## The fragment library
@@ -150,7 +150,7 @@ Fragments live under `orchestrator/gru/prompts/`, grouped by topic:
 | `delegation.md` | `returns`/`mode` mechanics for shaping a delegation, plus "What comes back" (the fourteenth change's verdict-summary contract). |
 | `verification.md` | "Authoring final_verification" guidance — building a check without access to the hidden grading tests. |
 
-Split from one `delegation_and_verification.md` into `delegation.md` + `verification.md` on 2026-08-24 (eighteenth change) — two distinct topics (shaping/receiving delegated work vs. Gru's own finish-time verification) that had been merged into one file since the eleventh change's consolidation; composed output unchanged, `gru.yaml`'s fragment list updated to match. All five are always included — `gru.yaml` is the only config, so there's no picking-a-subset step anymore. `orchestrator/gru_config.load_gru_config('gru.yaml')` resolves `agent.system_template_fragments` into the composed prompt string; `run_session.py` and `tests/harness.py` both call it instead of a plain `yaml.safe_load`.
+Split from one `delegation_and_verification.md` into `delegation.md` + `verification.md` on 2026-08-24 (eighteenth change) — two distinct topics (shaping/receiving delegated work vs. Gru's own finish-time verification) that had been merged into one file since the eleventh change's consolidation; composed output unchanged, `gru.yaml`'s fragment list updated to match. All five are always included — `gru.yaml` is the only config, so there's no picking-a-subset step anymore. `orchestrator/gru/config.py`'s `load_gru_config('swe_bench/gru.yaml')` resolves `agent.system_template_fragments` into the composed prompt string; `run_session.py` and `tests/harness.py` both call it instead of a plain `yaml.safe_load`.
 
 `tool_policy` (`allow_think`, `allow_run_check`, `allow_verdict`, `require_finish_verification` — see the second 2026-08-24 revision note above) still exists in `orchestrator/gru/toolcall.py ToolPolicy` and still works, independently of the fragment consolidation — it shapes the actual tool schemas/validation, not prompt text. `gru.yaml` doesn't set it, so it's at its fully-permissive default; nothing currently exercises the restrictive path, but it's there if a narrower session is wanted again.
 

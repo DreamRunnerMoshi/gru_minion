@@ -23,7 +23,7 @@ PAIRS=(
 # Solo first, deliberately: a budget cutoff mid-batch then always leaves complete
 # (solo, paired) comparison groups behind, never a dangling half.
 ARMS=(
-  "solo|swe_bench_solo"
+  "solo|swe_bench/solo"
   "paired|swe_bench"
 )
 

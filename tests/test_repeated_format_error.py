@@ -9,7 +9,7 @@ these tests are the offline substitute: deterministic, no GPU, no Ollama.
 from tests.harness import run_session
 from tests.mock_llm import Text, Tool
 
-MAX_CONSECUTIVE_FORMAT_ERRORS = 6  # orchestrator/config/gru.yaml agent.max_consecutive_format_errors
+MAX_CONSECUTIVE_FORMAT_ERRORS = 6  # orchestrator/config/swe_bench/gru.yaml agent.max_consecutive_format_errors
 
 
 def _all_message_text(llm) -> str:

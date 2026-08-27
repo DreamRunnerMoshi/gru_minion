@@ -56,13 +56,13 @@ class SWEBenchBenchmark(Benchmark):
             prompt_vars={
                 "task_description": instance["problem_statement"],
                 "repo_name": instance.get("repo", ""),
-                "repo_path_or_access_instructions": self.session_config["environment"]["cwd"],
+                "repo_path_or_access_instructions": self.environment_config["environment"]["cwd"],
             },
             raw=instance,
         )
 
     def open_environment(self, task: Task) -> Any:
-        return get_sb_environment(self.session_config, task.raw)
+        return get_sb_environment(self.environment_config, task.raw)
 
     def finalize(self, *, task: Task, result: dict, env: SWEBenchEnvironment, model_name: str) -> Outcome:
         patch = result.get("submission", "")

@@ -7,7 +7,7 @@ for the design rationale and prompts/README.md for the revision history.
 Revised 2026-08-24: the action set is no longer fixed at four. `ToolPolicy` +
 `build_tools(policy)` let a session offer any subset (finish is always present;
 delegate_to_minion, think, run_check, returns='verdict', and finish's verification
-requirement are each independently toggleable) — orchestrator/config/gru.yaml
+requirement are each independently toggleable) — orchestrator/config/swe_bench/gru.yaml
 currently uses the fully-permissive default (all four, no restrictions); the
 restrictive path exists for whenever a narrower session is wanted again.
 

@@ -5,7 +5,7 @@ Renamed 2026-08-26 from run_gru_session.py (which was itself renamed from
 run_exp2_single.py; git history preserved via `git mv` both times), and merged with
 run_gaia_session.py. The two were the same script apart from which dataset they loaded
 and what they did with the result — both now come from the benchmark named by
-`--benchmark`, resolved through orchestrator/config/benchmarks/<name>.yaml and the
+`--benchmark`, resolved through a spec under orchestrator/config/<benchmark>/ and the
 registry in orchestrator/benchmarks/. Adding a third dataset needs no change here.
 
 Originally one shared `--model` for both roles (Phase 1 framework validation, see
@@ -83,8 +83,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--benchmark",
         default="swe_bench",
-        help="Benchmark config under orchestrator/config/benchmarks/ (without .yaml): swe_bench, gaia, "
-        "swe_bench_solo, gaia_solo, or any other spec added there",
+        help="Which benchmark spec to run. A bare name is that benchmark's default spec "
+        "(swe_bench -> orchestrator/config/swe_bench/default.yaml); a variant is named with a slash "
+        "(swe_bench/solo, gaia/solo -> .../solo.yaml). Any spec file added to a benchmark's config "
+        "directory is selectable this way.",
     )
     parser.add_argument("--instance", required=True, help="Instance id within the benchmark (SWE-bench instance_id, GAIA task_id)")
     parser.add_argument("--subset", help="Override the benchmark spec's dataset subset (SWE-bench: lite/verified/...)")
@@ -94,8 +96,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--minion-model", help="litellm model string for the minion specifically; overrides --model for the minion")
     parser.add_argument("--api-base", help="Ollama/OpenAI-compatible API base URL — needed for self-hosted serving, not for a hosted-API model routed by litellm's provider prefix (e.g. openrouter/...)")
     parser.add_argument("--output-dir", required=True, type=Path)
-    parser.add_argument("--gru-config", help="Override the benchmark spec's Gru config filename under orchestrator/config/ (for A/B comparisons against an alternate prompt)")
-    parser.add_argument("--minion-config", help="Override the benchmark spec's minion config filename under orchestrator/config/")
+    parser.add_argument("--gru-config", help="Override the benchmark spec's Gru config, as a path under orchestrator/config/ (e.g. swe_bench/gru-solo.yaml) — for A/B comparisons against an alternate prompt")
+    parser.add_argument("--minion-config", help="Override the benchmark spec's minion config, as a path under orchestrator/config/ (e.g. gaia/minion.yaml)")
     parser.add_argument(
         "--cost-limit",
         type=float,

@@ -108,7 +108,7 @@ def bash(command: str) -> Tool:
 def submit(read_command: str) -> Tool:
     """Shorthand for a minion ending its turn: mini-swe-agent's LocalEnvironment treats
     a bash command whose first output line is COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT as
-    Submitted (see minion.yaml's own instructions to the model — "echo
+    Submitted (see the minion config's own instructions to the model — "echo
     COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && cat findings.md" — and
     minisweagent.environments.local.LocalEnvironment._check_finished). `read_command`
     is whatever prints the submission body, e.g. "cat findings.md" or "cat patch.txt"."""

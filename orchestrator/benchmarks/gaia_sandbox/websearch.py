@@ -7,7 +7,7 @@ bash command (`python3 /usr/local/bin/websearch.py "<query>"`), same as any othe
 tool it has access to — no separate implementation needed for the two callers.
 
 Needs TAVILY_API_KEY in the environment (forwarded into the container — see
-orchestrator/config/gaia-session.yaml's forward_env).
+orchestrator/config/gaia/environment.yaml's forward_env).
 """
 
 import json

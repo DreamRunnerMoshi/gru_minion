@@ -50,7 +50,7 @@ def test_agentic_verdict_delegation_runs_for_real_and_gru_reverifies(tmp_path):
 def test_verdict_delegation_shows_gru_the_summary_but_not_the_raw_patch(tmp_path):
     """2026-08-24: verdict delegations used to hide the minion's own submission from Gru
     entirely (only PASS/FAIL). Now the minion compiles summary.md before submitting
-    (config/minion.yaml's verdict Submission steps) and Gru is shown that summary — but
+    (config/swe_bench/minion.yaml's verdict Submission steps) and Gru is shown that summary — but
     still never the raw patch, so the check result stays the only thing that decides
     correctness (orchestrator/gru/environment.py's _split_verdict_submission)."""
     delegate = Tool(

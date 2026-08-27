@@ -1,6 +1,6 @@
 """Composes Gru's system_template from a handful of fragments under
 orchestrator/gru/prompts/, instead of one long hand-written string in the config
-itself. orchestrator/config/gru.yaml lists which fragments it wants and renders to the
+itself. orchestrator/config/swe_bench/gru.yaml lists which fragments it wants and renders to the
 same prompt it always did, just built from a few parts instead of typed as one block —
 editing the prompt means editing one topic's file, not hunting through a monolith.
 

@@ -81,9 +81,10 @@ orchestrator/benchmarks/    One module per dataset behind a common interface (ba
                          swebench.py, gaia.py, plus GAIA's dataset loader, scorer and
                          gaia_sandbox/ (Dockerfile + tools for its network-enabled sandbox).
 orchestrator/metrics/   Token, cache, real-cost and localization-coverage accounting.
-orchestrator/config/    YAML configs: benchmarks/ (which dataset + which configs a run
-                         uses), model kwargs, prompt-fragment lists, tool policy,
-                         per-benchmark instance templates (gru.yaml, gaia.yaml, *-solo.yaml).
+orchestrator/config/    One directory per benchmark (swe_bench/, gaia/), each holding
+                         its specs (default.yaml, solo.yaml — dataset + which configs a
+                         run uses) alongside the gru.yaml, minion.yaml and
+                         environment.yaml those specs name.
 experiments/exp0 – exp6/    One directory per experiment, each with a NOTES.md write-up,
                          raw trajectories, and real evaluation reports.
 scripts/                Batch runner (run_batch.sh + a spec per experiment under
@@ -135,11 +136,12 @@ python -m orchestrator.run_session --benchmark gaia \
   --output-dir results/my-gaia-run
 ```
 
-`--benchmark` names a spec under `orchestrator/config/benchmarks/`, which is what
-decides the dataset, the sandbox and the config files a run uses; `swe_bench_solo` /
-`gaia_solo` run Gru with no delegation available at all, for a solo baseline comparison.
-Adding a dataset means adding a module under `orchestrator/benchmarks/` and a spec file
-— nothing in the runner changes.
+`--benchmark` names a spec inside a benchmark's own config directory — a bare name is
+its `default.yaml`, a slash names a variant (`swe_bench/solo`, `gaia/solo`, which run Gru
+with no delegation available at all, for a solo baseline). The spec decides the dataset,
+the container and which of that directory's Gru/minion configs the run uses. Adding a
+dataset means adding a module under `orchestrator/benchmarks/` and a config directory
+here — nothing in the runner changes.
 
 A sweep of many instances runs through `scripts/run_batch.sh`, which takes a spec file
 naming the instances, the model pairs and the arms (each arm is just a benchmark spec,
