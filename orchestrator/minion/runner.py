@@ -31,9 +31,10 @@ no-op for `openrouter/qwen/qwen3-max` otherwise (real cost $0.0017/call, tracked
 See orchestrator/metrics/real_cost.py.
 """
 
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import litellm
 
@@ -63,6 +64,34 @@ def split_verdict_submission(submission: str) -> tuple[str, str]:
         summary, _, patch = submission.partition(VERDICT_SUMMARY_MARKER)
         return summary.strip(), patch.strip()
     return submission.strip(), ""
+
+
+class _RecordingEnvironment:
+    """Wraps the environment handed to a minion so every shell command it runs is
+    reported as it happens, rather than only showing up in the trajectory afterwards.
+
+    A proxy rather than a DefaultAgent subclass on purpose: mini-swe-agent's
+    `execute_actions` computes its outputs inline, so capturing them there would mean
+    duplicating library internals that could drift. Everything the minion does reaches
+    the outside world through `execute()`, so wrapping that is both complete and
+    coupling-free. Anything else on the environment passes straight through."""
+
+    def __init__(self, env: Any, on_command: Callable[[str, int, str], None]):
+        self._env = env
+        self._on_command = on_command
+
+    def execute(self, action: dict, *args, **kwargs) -> dict:
+        result = self._env.execute(action, *args, **kwargs)
+        try:
+            self._on_command(
+                action.get("command", ""), result.get("returncode", 0), result.get("output", "")
+            )
+        except Exception:  # progress reporting must never break a delegation
+            pass
+        return result
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._env, name)
 
 
 @dataclass
@@ -95,6 +124,7 @@ class MinionRunner:
         instance_template: str,
         output_dir: Path | None = None,
         run_id: str = "test-session",
+        on_progress: Callable[[dict], None] | None = None,
     ):
         self.env = env
         self.model_kwargs = model_kwargs
@@ -103,6 +133,17 @@ class MinionRunner:
         self.instance_template = instance_template
         self.output_dir = output_dir
         self.run_id = run_id
+        # Called with one event dict per shell command the minion runs, and once when a
+        # delegation starts and finishes. A delegation is otherwise a black box for the
+        # minutes it takes; this is what lets the caller say what it is doing right now.
+        self.on_progress = on_progress
+
+    def _progress(self, **event: Any) -> None:
+        if self.on_progress is not None:
+            try:
+                self.on_progress(event)
+            except Exception:  # never let reporting break the work
+                pass
 
     @classmethod
     def from_config(
@@ -115,6 +156,7 @@ class MinionRunner:
         cost_limit: float = 0.0,
         output_dir: Path | None = None,
         run_id: str = "test-session",
+        on_progress: Callable[[dict], None] | None = None,
     ) -> "MinionRunner":
         """Build from a loaded minion config (each benchmark's own config/<name>/minion.yaml):
         the agent block minus its two prompt templates becomes the agent kwargs, the
@@ -135,15 +177,32 @@ class MinionRunner:
             instance_template=config["agent"]["instance_template"],
             output_dir=output_dir,
             run_id=run_id,
+            on_progress=on_progress,
         )
 
     def run(self, args: dict, material: str, delegation_id: str) -> DelegationResult:
         """Dispatch on the delegation's own `mode`. Anything that isn't "oneshot" is an
         agentic loop — gru/toolcall.py validates the field, so an unknown value never
         reaches here."""
-        if args["mode"] == "oneshot":
-            return self._run_oneshot(args, material, delegation_id)
-        return self._run_agentic(args, material, delegation_id)
+        started = time.time()
+        self._progress(
+            event="start",
+            delegation_id=delegation_id,
+            mode=args["mode"],
+            returns=args["returns"],
+            description=args["description"],
+        )
+        runner = self._run_oneshot if args["mode"] == "oneshot" else self._run_agentic
+        result = runner(args, material, delegation_id)
+        self._progress(
+            event="done",
+            delegation_id=delegation_id,
+            exit_status=result.exit_status,
+            api_calls=result.api_calls,
+            total_tokens=result.tokens["total_tokens"],
+            elapsed=round(time.time() - started, 1),
+        )
+        return result
 
     def _session_id(self, delegation_id: str) -> str:
         return f"minion-{self.run_id}-{delegation_id}"
@@ -187,6 +246,21 @@ class MinionRunner:
         )
 
     def _run_agentic(self, args: dict, material: str, delegation_id: str) -> DelegationResult:
+        commands = 0
+
+        def on_command(command: str, returncode: int, output: str) -> None:
+            nonlocal commands
+            commands += 1
+            self._progress(
+                event="command",
+                delegation_id=delegation_id,
+                n=commands,
+                command=command,
+                returncode=returncode,
+                output_bytes=len(output or ""),
+            )
+
+        env = _RecordingEnvironment(self.env, on_command) if self.on_progress else self.env
         model = MinionModel(
             **{
                 **self.model_kwargs,
@@ -201,7 +275,7 @@ class MinionRunner:
             output_path = self.output_dir / "minions" / f"{delegation_id}.traj.json"
         agent = DefaultAgent(
             model,
-            self.env,
+            env,
             system_template=self.system_template,
             instance_template=self.instance_template,
             output_path=output_path,

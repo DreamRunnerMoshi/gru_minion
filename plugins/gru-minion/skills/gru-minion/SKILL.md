@@ -93,9 +93,32 @@ reliable than plain Claude Code — which is the whole way this product fails.
 
 ## Issuing a delegation
 
+An agentic delegation runs for minutes. Dispatch it in the background so you are not
+blocked, and so the user sees progress rather than a frozen prompt:
+
 ```bash
-gru-delegate --spec .gru/t1.json --session .gru/<task-name>
+gru-delegate --spec .gru/t1.json --session .gru/<task-name> > .gru/t1.out 2> .gru/t1.log &
 ```
+
+While it runs, poll for a condensed line — this works mid-flight:
+
+```bash
+gru-delegate --session .gru/<task-name> --status
+# t1  agentic/findings  running  ran 4 shell commands  38.2s elapsed
+```
+
+**Report that to the user, not the raw stream.** "Minion ran 4 shell commands" is the
+right altitude: they want to know it is working and roughly how hard, not to read every
+command. Surface individual commands only when something is going wrong — a non-zero
+`returncode` count in the status line is the signal to look at `.gru/t1.log`, which has
+one line per command.
+
+When the status line shows a terminal `exit_status`, read `.gru/t1.out` for the actual
+result — the findings, or the PASS/FAIL and summary.
+
+For a `oneshot` delegation, skip all this and run it in the foreground; it is one model
+call and returns in seconds.
+
 
 ```json
 {

@@ -74,7 +74,9 @@ import os
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
+from typing import Callable
 
 os.environ.setdefault("MSWEA_COST_TRACKING", "ignore_errors")
 
@@ -150,7 +152,39 @@ def _snapshots(session: Path) -> dict:
     return json.loads(path.read_text()) if path.is_file() else {}
 
 
-def build_environment(*, session: Path, cwd: Path, model: str, cost_limit: float, minion_config: str) -> GruEnvironment:
+def make_progress_writer(session: Path, quiet: bool) -> "Callable[[dict], None]":
+    """A delegation is otherwise silent for the minutes it runs. Every event is appended
+    as JSON to <session>/progress.jsonl so a caller can tail it, and rendered as one short
+    human line on stderr — stderr specifically, so stdout stays exactly the observation
+    Gru reads, and the two never have to be untangled."""
+    path = session / "progress.jsonl"
+
+    def write(event: dict) -> None:
+        with path.open("a") as fh:
+            fh.write(json.dumps({"t": round(time.time(), 3), **event}) + "\n")
+        if quiet:
+            return
+        kind = event.get("event")
+        if kind == "start":
+            line = f"[{event['delegation_id']}] start {event['mode']}/{event['returns']}: {event['description'][:70]}"
+        elif kind == "command":
+            status = "" if event["returncode"] == 0 else f" (exit {event['returncode']})"
+            line = f"[{event['delegation_id']}] {event['n']:>2}. $ {event['command'][:80]}{status}"
+        elif kind == "done":
+            line = (
+                f"[{event['delegation_id']}] done {event['exit_status']} — "
+                f"{event['api_calls']} calls, {event['total_tokens']:,} tokens, {event['elapsed']}s"
+            )
+        else:
+            line = f"[{event.get('delegation_id','?')}] {kind}"
+        print(line, file=sys.stderr, flush=True)
+
+    return write
+
+
+def build_environment(
+    *, session: Path, cwd: Path, model: str, cost_limit: float, minion_config: str, quiet: bool = False
+) -> GruEnvironment:
     session.mkdir(parents=True, exist_ok=True)
     shell = LocalEnvironmentWithCleanup(cwd=str(cwd))
     env = GruEnvironment(
@@ -162,12 +196,46 @@ def build_environment(*, session: Path, cwd: Path, model: str, cost_limit: float
             cost_limit=cost_limit,
             output_dir=session,
             run_id=session.name,
+            on_progress=make_progress_writer(session, quiet),
         ),
         output_dir=session,
         logger=logger,
     )
     _resume(env, session)
     return env
+
+
+def print_status(session: Path) -> None:
+    """One condensed line per delegation, from the progress stream — safe to call while a
+    delegation is still running, which is the point: it turns a black box into "ran 4
+    shell commands so far". Gru reports this to the user rather than the raw stream."""
+    path = session / "progress.jsonl"
+    if not path.is_file():
+        print(f"no progress recorded in {session}")
+        return
+    events = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+    by_id: dict[str, list[dict]] = {}
+    for e in events:
+        by_id.setdefault(e.get("delegation_id", "?"), []).append(e)
+
+    for delegation_id, evs in by_id.items():
+        start = next((e for e in evs if e["event"] == "start"), {})
+        done = next((e for e in evs if e["event"] == "done"), None)
+        commands = [e for e in evs if e["event"] == "command"]
+        failed = sum(1 for e in commands if e.get("returncode", 0) != 0)
+
+        ran = f"ran {len(commands)} shell command{'' if len(commands) == 1 else 's'}"
+        if failed:
+            ran += f" ({failed} failed)"
+        shape = f"{start.get('mode', '?')}/{start.get('returns', '?')}"
+        if done:
+            print(
+                f"{delegation_id}  {shape}  {done['exit_status']}  {ran}  "
+                f"{done['api_calls']} model calls  {done['total_tokens']:,} tokens  {done['elapsed']}s"
+            )
+        else:
+            elapsed = round(time.time() - evs[0]["t"], 1)
+            print(f"{delegation_id}  {shape}  running  {ran}  {elapsed}s elapsed")
 
 
 def print_summary(session: Path) -> None:
@@ -196,10 +264,16 @@ def main() -> None:
     parser.add_argument("--model", default="openrouter/z-ai/glm-4.5-air", help="litellm model string for the minion")
     parser.add_argument("--minion-config", default="general/minion.yaml", help="Minion config under orchestrator/config/. The default is the general-purpose one: real repository, no patch ritual, and forbidden from touching anything it did not create. The benchmark variants (swe_bench/minion.yaml, gaia/minion.yaml) exist to score instances and are not safe against a working tree you care about.")
     parser.add_argument("--cost-limit", type=float, default=0.15, help="Hard dollar cap on this one delegation's agentic session (0 leaves the config's own)")
+    parser.add_argument("--quiet", action="store_true", help="Suppress the live per-command progress lines on stderr. <session>/progress.jsonl is written either way.")
+    parser.add_argument("--status", action="store_true", help="Print a condensed one-line status per delegation from the progress stream, and exit. Works while a delegation is still running.")
     parser.add_argument("--summary", action="store_true", help="Print what this session's delegations have cost so far, and exit")
     parser.add_argument("--benchmark-minion-config", action="store_true", help="Permit a --minion-config outside general/. The benchmark configs instruct the minion to revert changes unrelated to its own task, which is correct in a throwaway scoring container and destructive against a working tree you care about. Only the benchmark harness should pass this.")
     parser.add_argument("--allow-dirty", action="store_true", help="Permit a verdict delegation against a working tree with uncommitted changes. Refused by default — a verdict-mode minion is instructed to revert changes unrelated to its own work, which in a shared tree means yours. See this module's docstring.")
     args = parser.parse_args()
+
+    if args.status:
+        print_status(args.session)
+        return
 
     if args.summary:
         print_summary(args.session)
@@ -255,6 +329,7 @@ def main() -> None:
         model=args.model,
         cost_limit=args.cost_limit,
         minion_config=args.minion_config,
+        quiet=args.quiet,
     )
     next_id = f"t{env.delegation_counter + 1}"
     if snapshot := snapshot_working_tree(args.cwd, args.session, next_id):

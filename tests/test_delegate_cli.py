@@ -212,3 +212,52 @@ def test_benchmark_minion_configs_are_refused_by_default(tmp_path):
     # the escape hatch exists for the benchmark harness, and works
     invoke("--minion-config", "swe_bench/minion.yaml", "--benchmark-minion-config")
     assert llm.calls, "--benchmark-minion-config must permit it"
+
+
+def _progress(session: Path, *events: dict) -> None:
+    session.mkdir(parents=True, exist_ok=True)
+    with (session / "progress.jsonl").open("w") as fh:
+        for i, e in enumerate(events):
+            fh.write(json.dumps({"t": 1000.0 + i, **e}) + "\n")
+
+
+def test_status_condenses_a_finished_delegation(tmp_path, capsys):
+    """The point of the progress stream: a delegation is otherwise a black box for
+    minutes. Gru reports this line, not the raw event stream."""
+    session = tmp_path / "s"
+    _progress(
+        session,
+        {"event": "start", "delegation_id": "t1", "mode": "agentic", "returns": "findings", "description": "x"},
+        {"event": "command", "delegation_id": "t1", "n": 1, "command": "ls", "returncode": 0, "output_bytes": 10},
+        {"event": "command", "delegation_id": "t1", "n": 2, "command": "grep x", "returncode": 1, "output_bytes": 0},
+        {"event": "done", "delegation_id": "t1", "exit_status": "Submitted", "api_calls": 3,
+         "total_tokens": 7295, "elapsed": 12.7},
+    )
+    delegate.print_status(session)
+    out = capsys.readouterr().out
+    assert "ran 2 shell commands (1 failed)" in out
+    assert "Submitted" in out and "7,295 tokens" in out
+
+
+def test_status_works_while_a_delegation_is_still_running(tmp_path, capsys):
+    """Mid-flight is the case that matters — a completed delegation could just be read
+    from its result. There is no `done` event yet, so the line must still render."""
+    session = tmp_path / "s"
+    _progress(
+        session,
+        {"event": "start", "delegation_id": "t1", "mode": "agentic", "returns": "verdict", "description": "x"},
+        {"event": "command", "delegation_id": "t1", "n": 1, "command": "pytest", "returncode": 0, "output_bytes": 5},
+    )
+    delegate.print_status(session)
+    out = capsys.readouterr().out
+    assert "running" in out
+    assert "ran 1 shell command" in out and "commands" not in out, "singular for one command"
+
+
+def test_progress_is_written_for_a_real_delegation(tmp_path):
+    """The writer is wired into the runner, not merely defined."""
+    run_delegation(tmp_path, oneshot("do a thing", read_paths=["/dev/null"]), _canned("done"))
+    events = [json.loads(l) for l in (tmp_path / "s1" / "progress.jsonl").read_text().splitlines() if l.strip()]
+    kinds = [e["event"] for e in events]
+    assert kinds == ["start", "done"], "a oneshot runs no shell commands, so start and done only"
+    assert events[-1]["total_tokens"] == 110
