@@ -29,9 +29,23 @@ gru-delegate --help >/dev/null 2>&1 || echo "not installed"
 git status --porcelain
 ```
 
-If `gru-delegate` is missing, prefix every call with
-`uvx --from git+https://github.com/DreamRunnerMoshi/gru_minion`. If `OPENROUTER_API_KEY`
-is unset, say so and stop — there is no minion without it.
+If `OPENROUTER_API_KEY` is unset, say so and stop — there is no minion without it.
+
+If `gru-delegate` is missing, say so and offer to install it, once:
+
+```bash
+uv tool install "git+https://github.com/DreamRunnerMoshi/gru_minion@v0.1.0"
+```
+
+Prefer this over running through `uvx` every time, and say why when you offer it: a bare
+`uvx --from git+...` resolves the repository's default branch on each fresh resolve, so a
+push upstream can change what you are running part-way through a session. `uv tool
+install` pins the commit until deliberately updated, keeps the first call's ~30s build a
+one-off, and shortens every later command to `gru-delegate ...`.
+
+If the user declines, or `uv tool install` fails, fall back to prefixing every call with
+`uvx --from "git+https://github.com/DreamRunnerMoshi/gru_minion@v0.1.0"` — it works, and the
+delegations are identical. Just do not report the fallback as if the two were equivalent.
 
 **If the tree is dirty, offer to commit or stash first.** Delegated changes land directly
 in the working tree and will mix with whatever is already there. `gru-delegate` refuses a

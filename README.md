@@ -83,7 +83,7 @@ minion runner, and the same independent check re-runs.
 Needs an `OPENROUTER_API_KEY`. The executor runs through `uvx` with no install step:
 
 ```bash
-uvx --from git+https://github.com/DreamRunnerMoshi/gru_minion gru-delegate --help
+uvx --from "git+https://github.com/DreamRunnerMoshi/gru_minion@v0.1.0" gru-delegate --help
 ```
 
 Or install it properly — `pip install git+https://github.com/DreamRunnerMoshi/gru_minion`

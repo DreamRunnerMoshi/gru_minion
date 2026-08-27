@@ -185,3 +185,30 @@ def test_verdict_delegation_refuses_a_dirty_working_tree(tmp_path):
         run_delegation(tmp_path, verdict, blocked, session="dirty", cwd=repo)
     assert excinfo.value.code == 2
     assert blocked.calls == [], "nothing may be charged when the tree is refused"
+
+
+def test_benchmark_minion_configs_are_refused_by_default(tmp_path):
+    """The benchmark minion configs ship in the same wheel as the general-purpose one and
+    their names read as authoritative, but their Submission steps tell the minion to
+    revert anything in the tree unrelated to its own task — correct in a throwaway scoring
+    container, destructive against a real checkout. Reaching one by accident must not be
+    possible."""
+    llm = _canned("never reached")
+    spec_file = tmp_path / "spec.json"
+    spec_file.write_text(json.dumps(oneshot("x", read_paths=["/dev/null"])))
+
+    def invoke(*extra):
+        argv = ["delegate", "--session", str(tmp_path / "s"), "--spec", str(spec_file),
+                "--cwd", str(tmp_path), "--model", "mock/minion", *extra]
+        with patch("litellm.completion", llm), patch.object(sys, "argv", argv):
+            delegate.main()
+
+    for unsafe in ("swe_bench/minion.yaml", "gaia/minion.yaml"):
+        with pytest.raises(SystemExit) as excinfo:
+            invoke("--minion-config", unsafe)
+        assert excinfo.value.code == 2
+    assert llm.calls == [], "nothing may be charged for a refused config"
+
+    # the escape hatch exists for the benchmark harness, and works
+    invoke("--minion-config", "swe_bench/minion.yaml", "--benchmark-minion-config")
+    assert llm.calls, "--benchmark-minion-config must permit it"
