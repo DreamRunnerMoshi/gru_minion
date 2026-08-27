@@ -1,7 +1,7 @@
 """Fake `litellm.completion` for testing the Gru/minion harness without a real model.
 
 Both GruModel, GruEnvironment's oneshot path, and the minion's LitellmModel all call
-`litellm.completion(...)` directly (see orchestrator/gru_model.py, gru_environment.py,
+`litellm.completion(...)` directly (see orchestrator/gru/model.py, gru_environment.py,
 and minisweagent's litellm_model.py) — always via the `litellm` module attribute, never
 a `from litellm import completion` import. That means patching `litellm.completion`
 itself (not a per-module reference) intercepts every one of them uniformly, which is
@@ -108,7 +108,7 @@ def bash(command: str) -> Tool:
 def submit(read_command: str) -> Tool:
     """Shorthand for a minion ending its turn: mini-swe-agent's LocalEnvironment treats
     a bash command whose first output line is COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT as
-    Submitted (see minion.yaml's own instructions to the model — "echo
+    Submitted (see the minion config's own instructions to the model — "echo
     COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && cat findings.md" — and
     minisweagent.environments.local.LocalEnvironment._check_finished). `read_command`
     is whatever prints the submission body, e.g. "cat findings.md" or "cat patch.txt"."""

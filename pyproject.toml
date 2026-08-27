@@ -1,0 +1,47 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "gru-minion"
+version = "0.1.0"
+description = "A two-tier coding-agent architecture: a planning role that delegates bounded, contract-shaped work to a cheaper executing model, and verifies the result by re-running real checks rather than trusting the report."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+keywords = ["llm", "agents", "delegation", "swe-bench", "gaia", "claude-code"]
+
+# Only what a delegation actually needs. The benchmark harness (SWE-bench, GAIA) pulls in
+# `datasets` and `swebench`, which are large and irrelevant to anyone who just wants to
+# delegate work from their own editor — those live in the `benchmarks` extra. Verified by
+# import: orchestrator.delegate reaches litellm, mini-swe-agent, pyyaml and jinja2 and
+# nothing else, because orchestrator/benchmarks/ imports its dataset machinery lazily.
+dependencies = [
+    "litellm>=1.90",
+    "mini-swe-agent>=2.4.6",
+    "pyyaml>=6.0",
+    "jinja2>=3.1",
+]
+
+[project.optional-dependencies]
+# The research harness: running whole benchmark instances end to end.
+benchmarks = ["datasets", "swebench"]
+dev = ["pytest", "pyflakes"]
+
+[project.scripts]
+# The entry point the Claude Code plugin calls. Deliberately the same module the research
+# harness uses, not a vendored copy — a delegation issued from someone's editor goes
+# through exactly the code path the experiments measure.
+gru-delegate = "orchestrator.delegate:main"
+gru-session = "orchestrator.run_session:main"
+
+[project.urls]
+Homepage = "https://github.com/DreamRunnerMoshi/gru_minion"
+Repository = "https://github.com/DreamRunnerMoshi/gru_minion"
+
+[tool.hatch.build.targets.wheel]
+packages = ["orchestrator"]
+
+# Config YAML and prompt fragments are read at runtime by path (orchestrator/configs.py,
+# orchestrator/gru/prompts.py). They live inside the package directory, so hatchling ships
+# them with it — no force-include needed, and adding one duplicates every entry.

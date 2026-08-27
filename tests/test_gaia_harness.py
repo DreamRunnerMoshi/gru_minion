@@ -1,7 +1,7 @@
 """Exercises the GAIA harness's own control flow against a scripted model — no docker,
 no real API, no network. Uses the SAME action set as the SWE-bench side
 (delegate_to_minion/think/run_check/finish, unchanged tool schema) — see
-orchestrator/gaia_environment.py's module docstring for why there's no GAIA-specific
+orchestrator/benchmarks/gaia.py's module docstring for why there's no GAIA-specific
 web_search/python_exec tool or answer field. Mirrors tests/test_delegation_flow.py's
 role for the SWE-bench side: catches real wiring bugs before spending money on a live
 GAIA run.

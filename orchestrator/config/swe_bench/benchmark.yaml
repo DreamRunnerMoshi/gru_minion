@@ -1,0 +1,26 @@
+# Which dataset the orchestrator runs against, and which of this directory's configs
+# a run uses. `loader` picks the Benchmark implementation from
+# orchestrator/benchmarks/__init__.py's registry; the filenames below are siblings in
+# orchestrator/config/swe_bench/ and are resolved against it. Nothing here touches Gru's
+# own loop or prompt — see orchestrator/benchmarks/base.py.
+#
+#   python -m orchestrator.run_session --benchmark swe_bench      --instance <id> ...
+#   python -m orchestrator.run_session --benchmark swe_bench/solo --instance <id> ...
+benchmark:
+  loader: swe_bench
+  dataset:
+    subset: lite      # lite/verified/... — resolved via mini-swe-agent's DATASET_MAPPING
+    split: test
+  environment: environment.yaml
+  gru: gru.yaml
+  minion: minion.yaml
+
+  # Named overrides on everything above, selected as `--benchmark swe_bench/<variant>`.
+  # A variant states only what it changes, so the dataset and container are declared
+  # once and can't drift between arms of the same comparison.
+  variants:
+    # The no-minion baseline (exp5): same dataset, same container, a Gru config whose
+    # tool_policy.allow_delegate: false removes delegate_to_minion from the tool set
+    # entirely — the same model working a task alone vs. as Gru with a minion.
+    solo:
+      gru: gru-solo.yaml

@@ -1,6 +1,6 @@
 """Covers the fix from experiments/exp3/LOG.md's "RepeatedFormatError fix (2026-08-23)"
 section: GruModel now escalates its correction text as consecutive FormatErrors pile up
-(orchestrator/gru_toolcall.py's _escalation_prefix, orchestrator/gru_model.py's counter),
+(orchestrator/gru/toolcall.py's _escalation_prefix, orchestrator/gru/model.py's counter),
 instead of repeating the same static message every retry. This never got a live-infra
 confirmation before the cloud diagnostic run it was waiting on got stopped mid-session —
 these tests are the offline substitute: deterministic, no GPU, no Ollama.
@@ -9,7 +9,7 @@ these tests are the offline substitute: deterministic, no GPU, no Ollama.
 from tests.harness import run_session
 from tests.mock_llm import Text, Tool
 
-MAX_CONSECUTIVE_FORMAT_ERRORS = 6  # orchestrator/config/gru.yaml agent.max_consecutive_format_errors
+MAX_CONSECUTIVE_FORMAT_ERRORS = 6  # orchestrator/config/swe_bench/gru.yaml agent.max_consecutive_format_errors
 
 
 def _all_message_text(llm) -> str:

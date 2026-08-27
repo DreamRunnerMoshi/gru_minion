@@ -1,8 +1,8 @@
 # Minion — execution prompt
 
-The prompt a minion receives for one **`mode="agentic"`** delegation. **Extracted verbatim from `orchestrator/config/minion.yaml`** — regenerate rather than hand-edit.
+The prompt a minion receives for one **`mode="agentic"`** delegation. **Extracted verbatim from `orchestrator/config/swe_bench/minion.yaml`** — regenerate rather than hand-edit.
 
-**`mode="oneshot"` delegations do not use this prompt.** They are a single model call with a short inline system prompt in `orchestrator/gru_environment.py` — no shell, no loop, no step budget. That split exists because exp2 ran every delegation as a 40-step agentic loop: `t1` spent **105,770 tokens and 10 model calls** to read one 317-line file and summarise it, work that is a single completion. Delegating menial work has to be cheaper than doing it inline, or the delegation criterion is unprofitable to follow.
+**`mode="oneshot"` delegations do not use this prompt.** They are a single model call with a short inline system prompt in `orchestrator/minion/runner.py` — no shell, no loop, no step budget. That split exists because exp2 ran every delegation as a 40-step agentic loop: `t1` spent **105,770 tokens and 10 model calls** to read one 317-line file and summarise it, work that is a single completion. Delegating menial work has to be cheaper than doing it inline, or the delegation criterion is unprofitable to follow.
 
 **Revised 2026-08-22**: branches on `returns` (`findings` | `verdict`) instead of the old `type` taxonomy, and requires a **coverage receipt** on findings delegations.
 

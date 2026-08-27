@@ -11,7 +11,7 @@ import argparse
 import json
 from pathlib import Path
 
-from orchestrator.coverage import score_run
+from orchestrator.metrics.coverage import score_run
 
 DATASET = "SWE-bench/SWE-bench_Lite"
 
