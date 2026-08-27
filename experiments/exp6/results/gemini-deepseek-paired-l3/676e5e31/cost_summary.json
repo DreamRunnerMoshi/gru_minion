@@ -1,0 +1,973 @@
+{
+  "task_id": "676e5e31-a554-4acc-9286-b60d90a92d26",
+  "gru_model": "openrouter/google/gemini-3.7-flash",
+  "minion_model": "openrouter/deepseek/deepseek-v3.2",
+  "start_time": 1787709896.1764474,
+  "end_time": 1787710713.8039024,
+  "wall_clock_seconds": 817.627454996109,
+  "exit_status": "Submitted",
+  "answer": "50%",
+  "gold_answer": "86",
+  "resolved": false,
+  "gru_action_log": [
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "ls -la",
+          "find . -maxdepth 3"
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "curl -s https://www.google.com | head -n 5",
+          "python3 -c \"import urllib.request; print(urllib.request.urlopen('https://www.ams.usda.gov').getcode())\""
+        ]
+      }
+    },
+    {
+      "kind": "delegate_to_minion",
+      "args": {
+        "returns": "findings",
+        "description": "Search online / fetch the July 2, 1959 US standards for grades of processed fruits, vegetables, and certain other products (or CFR / USDA document), and find:\n1. All items listed in the \"dried and dehydrated\" section (or products listed as dehydrated / dried and dehydrated).\n2. Specifically identify items marked as \"dehydrated\".\n3. Check the \"Frozen\" or \"Frozen/Chilled\" section for any items that contain the whole name of those items, excluding any marked \"Chilled\".\n4. Determine the effective dates / version dates given in the 1959 standards for these items.\n5. Check current (as of August 2023) USDA AMS standards for grades of processed fruits and vegetables to see which of these standards have been superseded by a new version since the 1959 date.\n6. Return full details of all matched items, their 1959 dates, their current status / latest version dates, and the calculation of superseded percentage.",
+        "output_contract": "Detailed report of the search results, list of items meeting criteria, dates in 1959 standard, current status as of Aug 2023, whether superseded, and percentage calculation.",
+        "inputs": {
+          "scope": "."
+        },
+        "mode": "agentic"
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "python3 -c \"\nimport urllib.request\nimport json\nimport re\n\nurl = 'https://www.ams.usda.gov/grades-standards/fruits'\ntry:\n    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})\n    html = urllib.request.urlopen(req).read().decode('utf-8')\n    print('Fruits page length:', len(html))\nexcept Exception as e:\n    print('Error:', e)\n\"",
+          "python3 -c \"\nimport urllib.request\n\nurls = [\n    'https://www.ams.usda.gov/grades-standards/fruits',\n    'https://www.ams.usda.gov/grades-standards/vegetables',\n    'https://www.ams.usda.gov/grades-standards/processed-fruits-and-vegetables-processed-products',\n    'https://www.ams.usda.gov/grades-standards/fruit-and-vegetable-grades'\n]\nfor u in urls:\n    try:\n        req = urllib.request.Request(u, headers={'User-Agent': 'Mozilla/5.0'})\n        res = urllib.request.urlopen(req)\n        print(u, res.getcode())\n    except Exception as e:\n        print(u, e)\n\""
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "python3 -c \"\n# Let's inspect Archive.org for the exact 1959 document\nimport urllib.request, json\n# Search archive.org API\nurl = 'https://archive.org/advancedsearch.php?q=title%3A%22United+States+standards+for+grades+of+processed+fruits%22+AND+date%3A1959&fl[]=identifier,title,date&output=json'\nreq = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})\ndata = json.loads(urllib.request.urlopen(req).read().decode())\nprint(json.dumps(data, indent=2))\n\"",
+          "python3 -c \"\nimport urllib.request, json\nurl = 'https://archive.org/advancedsearch.php?q=%22United+States+standards+for+grades+of+processed+fruits%22&fl[]=identifier,title,date,year&output=json'\nreq = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})\ndata = json.loads(urllib.request.urlopen(req).read().decode())\nprint(json.dumps(data, indent=2))\n\""
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "python3 -c \"\nimport urllib.request\nurl = 'https://archive.org/stream/unitedstatesstan14unit_4/unitedstatesstan14unit_4_djvu.txt'\nreq = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})\ntext = urllib.request.urlopen(req).read().decode('utf-8', errors='ignore')\nprint('Length of text:', len(text))\nwith open('1959_text.txt', 'w') as f:\n    f.write(text)\nprint('First 1000 chars:')\nprint(text[:1000])\n\""
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "python3 -c \"\nimport urllib.request\nurl = 'https://archive.org/stream/unitedstatesstan14unit_4/unitedstatesstan14unit_4_djvu.txt'\nreq = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})\ntext = urllib.request.urlopen(req).read().decode('utf-8', errors='ignore')\nwith open('1959_text.txt', 'w') as f:\n    f.write(text)\nprint('Length:', len(text))\nprint(text[:1000])\n\""
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "python3 -c \"\nwith open('script.py', 'w') as f:\n    f.write('''\nimport urllib.request\nurl = 'https://archive.org/stream/unitedstatesstan14unit_4/unitedstatesstan14unit_4_djvu.txt'\nreq = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})\ntext = urllib.request.urlopen(req).read().decode('utf-8', errors='ignore')\nwith open('1959_text.txt', 'w') as f2:\n    f2.write(text)\nprint('Length:', len(text))\nprint(text[:1000])\n''')\n\" && python3 script.py"
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "python3 -c \"\nimport urllib.request, json\n# Let's inspect files in metadata\nurl = 'https://archive.org/metadata/unitedstatesstan14unit_4'\nreq = urllib.request.Request(url, headers={'User-Agent': 'TestBot/1.0'})\ndata = json.loads(urllib.request.urlopen(req).read().decode())\nfor file in data.get('files', []):\n    print(file.get('name'), file.get('size'), file.get('format'))\n\""
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "python3 -c \"import urllib.request, json; data = json.loads(urllib.request.urlopen('https://archive.org/metadata/unitedstatesstan14unit_4').read().decode()); print([f['name'] for f in data.get('files',[])])\""
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "python3 -c \"import urllib.request; open('1959.txt', 'wb').write(urllib.request.urlopen('https://archive.org/download/unitedstatesstan14unit_4/unitedstatesstan14unit_4_djvu.txt').read()); print('Downloaded size:', len(open('1959.txt').read()))\""
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "cat 1959.txt"
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "python3 -c \"import urllib.request; open('1959.pdf', 'wb').write(urllib.request.urlopen('https://archive.org/download/unitedstatesstan14unit_4/unitedstatesstan14unit_4.pdf').read()); print('PDF downloaded')\""
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "python3 -c \"\nimport pypdf\nreader = pypdf.PdfReader('1959.pdf')\nfor i, page in enumerate(reader.pages):\n    print(f'--- PAGE {i+1} ---')\n    print(page.extract_text())\n\" 2>/dev/null || python3 -c \"\nimport fitz # PyMuPDF\ndoc = fitz.open('1959.pdf')\nfor i, page in enumerate(doc):\n    print(f'--- PAGE {i+1} ---')\n    print(page.get_text())\n\" 2>/dev/null || pdftotext 1959.pdf pdf_text.txt && cat pdf_text.txt"
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "python3 -c \"import urllib.request; open('1959_hocr.html.gz', 'wb').write(urllib.request.urlopen('https://archive.org/download/unitedstatesstan14unit_4/unitedstatesstan14unit_4_hocr.html.gz').read()); import gzip; open('1959_hocr.html', 'wb').write(gzip.decompress(open('1959_hocr.html.gz', 'rb').read())); print('HOCR unpacked, size:', len(open('1959_hocr.html').read()))\""
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "python3 -c \"import urllib.request, gzip; open('1959_hocr_searchtext.txt', 'wb').write(gzip.decompress(urllib.request.urlopen('https://archive.org/download/unitedstatesstan14unit_4/unitedstatesstan14unit_4_hocr_searchtext.txt.gz').read())); print('Size:', len(open('1959_hocr_searchtext.txt').read()))\" && cat 1959_hocr_searchtext.txt"
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "python3 -c \"import urllib.request, gzip; data = gzip.decompress(urllib.request.urlopen('https://archive.org/download/unitedstatesstan14unit_4/unitedstatesstan14unit_4_chocr.html.gz').read()).decode('utf-8'); print('Length:', len(data)); open('1959_chocr.html', 'w').write(data)\" && head -n 50 1959_chocr.html"
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "python3 -c \"\nfrom xml.etree import ElementTree as ET\nimport re\n\ntree = ET.parse('1959_chocr.html')\nroot = tree.getroot()\n\n# extract all pages\nfor page in root.findall('.//{http://www.w3.org/1999/xhtml}div[@class=\\\"ocr_page\\\"]'):\n    page_id = page.get('id')\n    print(f'=== PAGE {page_id} ===')\n    for line in page.findall('.//{http://www.w3.org/1999/xhtml}span[@class=\\\"ocr_line\\\"]'):\n        line_text = ' '.join(word.text for word in line.findall('.//{http://www.w3.org/1999/xhtml}span[@class=\\\"ocrx_word\\\"]') if word.text)\n        if not line_text:\n            # try direct text\n            line_text = ''.join(line.itertext()).strip()\n        print(line_text)\n\""
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "python3 -c \"\nfrom xml.etree import ElementTree as ET\ntree = ET.parse('1959_chocr.html')\nfor word in tree.iter('{http://www.w3.org/1999/xhtml}span'):\n    if word.attrib.get('class') == 'ocrx_word':\n        chars = ''.join(c.text for c in word.findall('{http://www.w3.org/1999/xhtml}span') if c.text)\n        # print first 50 words\n        pass\n\" && python3 -c \"\nfrom bs4 import BeautifulSoup\n# let's install bs4 or just parse regex\nimport re\nwith open('1959_chocr.html') as f:\n    text = f.read()\n\n# Let's extract words by looking at ocrx_word\nwords = []\nfor m in re.finditer(r'<span class=\\\"ocrx_word\\\"[^>]*>(.*?)</span>\\s*</span>', text, re.DOTALL):\n    w_html = m.group(1)\n    # extract characters inside ocrx_cinfo\n    chars = re.findall(r'>([^<]+)</span>', w_html)\n    words.append(''.join(chars))\n\nprint('Found total words:', len(words))\nprint(' '.join(words[:200]))\n\""
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "python3 -c \"\nimport pypdf\nprint('pypdf installed')\n\" 2>/dev/null || python3 -c \"\nimport urllib.request, json\n# Let's see what tools/libraries are available\nimport subprocess\nprint(subprocess.run(['which', 'pdftotext', 'tesseract', 'ocrmypdf', 'gs', 'convert'], capture_output=True, text=True).stdout)\n\"",
+          "pip list"
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "python3 -c \"\nimport pdfplumber\nwith pdfplumber.open('1959.pdf') as pdf:\n    for i, page in enumerate(pdf.pages):\n        print(f'=== PAGE {i+1} ===')\n        text = page.extract_text()\n        print(text)\n\""
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "python3 -c \"\nimport pdfplumber\nwith pdfplumber.open('1959.pdf') as pdf:\n    for i, page in enumerate(pdf.pages):\n        print(f'*** PAGE {i+1} ***')\n        t = page.extract_text(layout=True)\n        print(t if t else '[EMPTY PAGE]')\n\""
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "python3 -c \"\nimport pdfplumber\nwith pdfplumber.open('1959.pdf') as pdf:\n    for i in range(5):\n        print(f'*** PAGE {i+1} ***')\n        print(pdf.pages[i].extract_text())\n\""
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "python3 -c \"\n# Let's inspect all items in AMS website\nimport urllib.request\nimport re\n\n# Fetch processed fruits and vegetables standards pages\nurls = [\n    'https://www.ams.usda.gov/grades-standards/fruits',\n    'https://www.ams.usda.gov/grades-standards/vegetables',\n]\n\nstandards = {}\n\nfor u in urls:\n    req = urllib.request.Request(u, headers={'User-Agent': 'Mozilla/5.0'})\n    html = urllib.request.urlopen(req).read().decode('utf-8')\n    # find links to standards\n    # look for table rows or links\n    # let's save the html\n    fname = u.split('/')[-1] + '.html'\n    open(fname, 'w').write(html)\n    print(fname, len(html))\n\"",
+          "python3 -c \"\nfrom bs4 import BeautifulSoup\nimport glob\n\nfor f in ['fruits.html', 'vegetables.html']:\n    soup = BeautifulSoup(open(f).read(), 'html.parser')\n    for a in soup.find_all('a'):\n        href = a.get('href', '')\n        text = a.get_text().strip()\n        if 'standard' in href.lower() or 'grade' in href.lower() or 'grades-standards' in href.lower():\n            if any(k in text.lower() for k in ['apple', 'grapefruit', 'orange', 'juice', 'dehydrated']):\n                print(f, text, '-->', href)\n\""
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "python3 -c \"\nwith open('parse_ams.py', 'w') as f:\n    f.write('''\nimport urllib.request\nfrom bs4 import BeautifulSoup\nimport re\n\nurls = [\n    'https://www.ams.usda.gov/grades-standards/fruits',\n    'https://www.ams.usda.gov/grades-standards/vegetables',\n]\n\nfor u in urls:\n    req = urllib.request.Request(u, headers={'User-Agent': 'TestClient/1.0'})\n    html = urllib.request.urlopen(req).read().decode('utf-8')\n    soup = BeautifulSoup(html, 'html.parser')\n    for a in soup.find_all('a'):\n        href = a.get('href', '')\n        text = a.get_text().strip()\n        if any(k in text.lower() for k in ['apple', 'grapefruit', 'orange', 'juice', 'dehydrated']):\n            print(text, '-->', href)\n''')\n\" && python3 parse_ams.py"
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "python3 -c \"\nimport urllib.request\nfrom bs4 import BeautifulSoup\n\nreq = urllib.request.Request('https://www.ams.usda.gov/grades-standards/fruits', headers={'User-Agent': 'CustomBot/1.0'})\nhtml = urllib.request.urlopen(req).read().decode('utf-8')\nsoup = BeautifulSoup(html, 'html.parser')\nfor a in soup.find_all('a'):\n    txt = a.get_text().strip()\n    href = a.get('href', '')\n    if 'apple' in txt.lower() or 'orange' in txt.lower() or 'grapefruit' in txt.lower() or 'dehydrated' in txt.lower():\n        print(txt, '-->', href)\n\""
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "python3 -c \"\nimport urllib.request\nfrom bs4 import BeautifulSoup\n\nurl = 'https://www.ams.usda.gov/grades-standards/fruits'\nhtml = urllib.request.urlopen(url).read().decode('utf-8')\nsoup = BeautifulSoup(html, 'html.parser')\nfor a in soup.find_all('a'):\n    txt = a.get_text().strip()\n    href = a.get('href', '')\n    if any(w in txt.lower() for w in ['apple', 'orange', 'grapefruit', 'dehydrated', 'dried', 'frozen']):\n        print(txt, '-->', href)\n\""
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "python3 -c \"\nimport urllib.request\nfrom bs4 import BeautifulSoup\n\nfor section in ['fruits', 'vegetables']:\n    url = f'https://www.ams.usda.gov/grades-standards/{section}'\n    html = urllib.request.urlopen(url).read().decode('utf-8')\n    soup = BeautifulSoup(html, 'html.parser')\n    for a in soup.find_all('a'):\n        txt = a.get_text().strip()\n        href = a.get('href', '')\n        if '/grades-standards/' in href and not href.endswith(('/fruits', '/vegetables')):\n            print(f'{section}: {txt} -> {href}')\n\""
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "python3 -c \"\nimport urllib.request\nfrom bs4 import BeautifulSoup\nimport re\n\nall_links = set()\nfor section in ['fruits', 'vegetables', 'nuts', 'specialty-crops']:\n    try:\n        url = f'https://www.ams.usda.gov/grades-standards/{section}'\n        html = urllib.request.urlopen(url).read().decode('utf-8')\n        soup = BeautifulSoup(html, 'html.parser')\n        for a in soup.find_all('a'):\n            href = a.get('href', '')\n            if '/grades-standards/' in href:\n                all_links.add((a.get_text().strip(), href))\n    except Exception as e:\n        print(section, e)\n\nprint('Total links collected:', len(all_links))\n# Let's filter for anything related to Dehydrated, Apples, Grapefruit, Orange\nfor title, href in sorted(all_links):\n    tl = title.lower()\n    if any(k in tl for k in ['dehydrated', 'grapefruit', 'orange', 'apple']):\n        print(f'{title} : {href}')\n\""
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "python3 -c \"\nimport urllib.request\nfrom bs4 import BeautifulSoup\nimport re\n\nurl = 'https://www.ams.usda.gov/grades-standards/fruits'\nhtml = urllib.request.urlopen(url).read().decode('utf-8')\nsoup = BeautifulSoup(html, 'html.parser')\n\nitems = []\nfor a in soup.find_all('a'):\n    href = a.get('href', '')\n    if '/grades-standards/' in href:\n        items.append((a.get_text().strip(), href))\n\nprint(f'Total fruit links: {len(items)}')\nfor text, href in items:\n    print(text, '-->', href)\n\""
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "python3 -c \"\nimport urllib.request\nfrom bs4 import BeautifulSoup\n\nfor section in ['fruits', 'vegetables']:\n    url = f'https://www.ams.usda.gov/grades-standards/{section}'\n    html = urllib.request.urlopen(url).read().decode('utf-8')\n    soup = BeautifulSoup(html, 'html.parser')\n    for a in soup.find_all('a'):\n        txt = a.get_text().strip()\n        href = a.get('href', '')\n        if any(w in txt.lower() for w in ['dehydrated', 'grapefruit juice', 'orange juice', 'dried apple', 'dehydrated apple']):\n            print(f'{section}: {txt} -> {href}')\n\""
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "python3 -c \"\nimport urllib.request\nfrom bs4 import BeautifulSoup\nimport re\n\nurl = 'https://www.ams.usda.gov/grades-standards/fruits'\nhtml = urllib.request.urlopen(url).read().decode('utf-8')\nsoup = BeautifulSoup(html, 'html.parser')\n\nfor a in soup.find_all('a'):\n    txt = a.get_text().strip()\n    href = a.get('href', '')\n    if 'grades-standards' in href:\n        print(txt, '||', href)\n\" | grep -iE \"apple|grapefruit|orange\""
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "python3 -c \"\nimport urllib.request\nfrom bs4 import BeautifulSoup\nimport re\n\nurl = 'https://www.ams.usda.gov/grades-standards/fruits'\nhtml = urllib.request.urlopen(url).read().decode('utf-8')\nsoup = BeautifulSoup(html, 'html.parser')\n\npager = soup.find(class_=re.compile('pager|pagination'))\nprint('Pager:', pager)\nfor a in soup.find_all('a', href=re.compile(r'page=\\d+')):\n    print(a)\n\""
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "python3 -c \"\nimport urllib.request\nfrom bs4 import BeautifulSoup\n\nall_items = {}\nfor cat in ['fruits', 'vegetables', 'nuts', 'specialty-crops', 'processed-fruits-and-vegetables']:\n    page = 0\n    while True:\n        url = f'https://www.ams.usda.gov/grades-standards/{cat}?page={page}'\n        try:\n            html = urllib.request.urlopen(url).read().decode('utf-8')\n            soup = BeautifulSoup(html, 'html.parser')\n            links = []\n            for a in soup.find_all('a'):\n                href = a.get('href', '')\n                if '/grades-standards/' in href and not href.endswith((f'/{cat}', f'/{cat}?page={page}')):\n                    txt = a.get_text().strip()\n                    if txt and txt not in ['Fruits', 'Vegetables', 'Nuts']:\n                        links.append((txt, href))\n            if not links or all((t, h) in all_items for t, h in links):\n                break\n            for t, h in links:\n                all_items[t] = h\n            # Check if there's a next page\n            if not soup.find('li', class_='pager__item--next'):\n                break\n            page += 1\n        except Exception as e:\n            # print(cat, page, e)\n            break\n\nprint(f'Total items scraped: {len(all_items)}')\nfor t, h in sorted(all_items.items()):\n    print(f'{t} --> {h}')\n\""
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "python3 -c \"\n# Let's search for Dehydrated Apples, Dehydrated Grapefruit Juice, Dehydrated Orange Juice, Frozen Apples\nimport urllib.request\nfrom bs4 import BeautifulSoup\n\ndef get_page_info(path):\n    url = f'https://www.ams.usda.gov{path}'\n    html = urllib.request.urlopen(url).read().decode('utf-8')\n    soup = BeautifulSoup(html, 'html.parser')\n    # find pdf links\n    pdfs = []\n    for a in soup.find_all('a'):\n        href = a.get('href', '')\n        if '.pdf' in href.lower():\n            pdfs.append((a.get_text().strip(), href))\n    # get text content\n    main = soup.find('main') or soup.find('body')\n    return pdfs, main.get_text()[:500] if main else ''\n\nfor name, path in [\n    ('Dehydrated Apples', '/grades-standards/dehydrated-low-moisture-apples-grades-and-standards'),\n    ('Dehydrated Grapefruit Juice', '/grades-standards/dehydrated-grapefruit-juice-grades-and-standards'),\n    ('Dehydrated Orange Juice', '/grades-standards/dehydrated-orange-juice-grades-and-standards'),\n    ('Frozen Apples', '/grades-standards/frozen-apples-grades-and-standards')\n]:\n    try:\n        pdfs, text = get_page_info(path)\n        print(name, 'PDFs:', pdfs)\n    except Exception as e:\n        print(name, 'ERROR:', e)\n\""
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "python3 -c \"\n# Let's find dehydrated apples URL\n# Search through all_items from previous script\nimport urllib.request\nfrom bs4 import BeautifulSoup\n\n# let's search on AMS\nurl = 'https://www.ams.usda.gov/search/node/dehydrated%20apples'\nhtml = urllib.request.urlopen(url).read().decode('utf-8')\nsoup = BeautifulSoup(html, 'html.parser')\nfor a in soup.find_all('a'):\n    if 'apple' in a.get_text().lower() or 'dehydrated' in a.get_text().lower():\n        print(a.get_text().strip(), '-->', a.get('href'))\n\""
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "python3 -c \"\nimport urllib.request\nfrom bs4 import BeautifulSoup\n\nfor cat in ['fruits', 'vegetables', 'nuts']:\n    page = 0\n    while True:\n        url = f'https://www.ams.usda.gov/grades-standards/{cat}?page={page}'\n        try:\n            html = urllib.request.urlopen(url).read().decode('utf-8')\n            soup = BeautifulSoup(html, 'html.parser')\n            for a in soup.find_all('a'):\n                href = a.get('href', '')\n                txt = a.get_text().strip()\n                if any(w in txt.lower() for w in ['apple', 'grapefruit', 'orange']):\n                    print(f'{cat} p{page}: {txt} -> {href}')\n            if not soup.find('li', class_='pager__item--next'):\n                break\n            page += 1\n        except Exception as e:\n            break\n\""
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "python3 -c \"\nimport urllib.request\nfrom bs4 import BeautifulSoup\n\nfor cat in ['fruits', 'vegetables', 'nuts']:\n    page = 0\n    while True:\n        url = f'https://www.ams.usda.gov/grades-standards/{cat}?page={page}'\n        try:\n            html = urllib.request.urlopen(url).read().decode('utf-8')\n            soup = BeautifulSoup(html, 'html.parser')\n            for a in soup.find_all('a'):\n                href = a.get('href', '')\n                txt = a.get_text().strip()\n                if any(w in txt.lower() for w in ['dehydrated', 'dried']):\n                    print(f'{cat} p{page}: {txt} -> {href}')\n            if not soup.find('li', class_='pager__item--next'):\n                break\n            page += 1\n        except Exception as e:\n            break\n\""
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "python3 -c \"\nimport urllib.request\nfrom bs4 import BeautifulSoup\nimport pdfplumber\nimport io\n\nurls = {\n    'Dehydrated Apples': '/grades-standards/dehydrated-apples-grades-and-standards',\n    'Dehydrated Grapefruit Juice': '/grades-standards/dehydrated-grapefruit-juice-grades-and-standards',\n    'Dehydrated Orange Juice': '/grades-standards/dehydrated-orange-juice-grades-and-standards',\n    'Frozen Apples': '/grades-standards/frozen-apples-grades-and-standards'\n}\n\nfor name, path in urls.items():\n    url = f'https://www.ams.usda.gov{path}'\n    soup = BeautifulSoup(urllib.request.urlopen(url).read().decode('utf-8'), 'html.parser')\n    print(f'=== {name} ===')\n    for a in soup.find_all('a'):\n        href = a.get('href', '')\n        if 'standard' in href.lower() and '.pdf' in href.lower():\n            pdf_url = href if href.startswith('http') else f'https://www.ams.usda.gov{href}'\n            print(f'  Standard PDF: {pdf_url}')\n            try:\n                pdf_data = urllib.request.urlopen(pdf_url).read()\n                with pdfplumber.open(io.BytesIO(pdf_data)) as pdf:\n                    first_page = pdf.pages[0].extract_text()\n                    print('  First page snippet:')\n                    print('\\n'.join(first_page.split('\\n')[:10]))\n            except Exception as e:\n                print('  Error reading PDF:', e)\n\""
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "python3 -c \"\nimport urllib.request\nimport pdfplumber\nimport io\n\npdf_urls = {\n    'Apples, Dehydrated (Low-moisture)': 'https://www.ams.usda.gov/sites/default/files/media/Dehydrated_Apples_Standard%5B1%5D.pdf',\n    'Grapefruit Juice (Dehydrated)': 'https://www.ams.usda.gov/sites/default/files/media/Dehydrated_Grapefruit_Juice_Standard%5B1%5D.pdf',\n    'Orange Juice (Dehydrated)': 'https://www.ams.usda.gov/sites/default/files/media/Dehydrated_Orange_Juice_Standard%5B1%5D.pdf',\n    'Frozen Apples': 'https://www.ams.usda.gov/sites/default/files/media/Frozen_Apples_Standard%5B1%5D.pdf'\n}\n\nfor name, url in pdf_urls.items():\n    print(f'================ {name} ================')\n    data = urllib.request.urlopen(url).read()\n    with pdfplumber.open(io.BytesIO(data)) as pdf:\n        print('Total pages:', len(pdf.pages))\n        for i, page in enumerate(pdf.pages):\n            text = page.extract_text()\n            lines = text.split('\\n')\n            # Look for effective date or history\n            for l in lines:\n                if any(w in l.lower() for w in ['effective', 'supersedes', 'amended', 'promulgated', 'issue', 'dated']):\n                    print(f'  [p.{i+1}] {l}')\n\""
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "python3 -c \"\nimport urllib.request\nimport pdfplumber\nimport io\n\npdf_urls = {\n    'Apples, Dehydrated (Low-moisture)': 'https://www.ams.usda.gov/sites/default/files/media/Dehydrated_Apples_Standard%5B1%5D.pdf',\n    'Grapefruit Juice (Dehydrated)': 'https://www.ams.usda.gov/sites/default/files/media/Dehydrated_Grapefruit_Juice_Standard%5B1%5D.pdf',\n    'Orange Juice (Dehydrated)': 'https://www.ams.usda.gov/sites/default/files/media/Dehydrated_Orange_Juice_Standard%5B1%5D.pdf',\n    'Frozen Apples': 'https://www.ams.usda.gov/sites/default/files/media/Frozen_Apples_Standard%5B1%5D.pdf'\n}\n\nfor name, url in pdf_urls.items():\n    print(f'================ {name} ================')\n    data = urllib.request.urlopen(url).read()\n    with pdfplumber.open(io.BytesIO(data)) as pdf:\n        for i in range(min(2, len(pdf.pages))):\n            print(f'--- Page {i+1} ---')\n            print(pdf.pages[i].extract_text())\n\""
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "python3 -c \"\nimport urllib.request\nimport pdfplumber\nimport io\n\npdf_urls = {\n    'Apples, Dehydrated (Low-moisture)': 'https://www.ams.usda.gov/sites/default/files/media/Dehydrated_Apples_Standard%5B1%5D.pdf',\n    'Grapefruit Juice (Dehydrated)': 'https://www.ams.usda.gov/sites/default/files/media/Dehydrated_Grapefruit_Juice_Standard%5B1%5D.pdf',\n    'Orange Juice (Dehydrated)': 'https://www.ams.usda.gov/sites/default/files/media/Dehydrated_Orange_Juice_Standard%5B1%5D.pdf',\n    'Frozen Apples': 'https://www.ams.usda.gov/sites/default/files/media/Frozen_Apples_Standard%5B1%5D.pdf'\n}\n\nfor name, url in pdf_urls.items():\n    print(f'================ {name} ================')\n    data = urllib.request.urlopen(url).read()\n    with pdfplumber.open(io.BytesIO(data)) as pdf:\n        for pno in [0, 1]:\n            if pno < len(pdf.pages):\n                lines = pdf.pages[pno].extract_text().split('\\n')\n                print(f'Page {pno+1}:')\n                for l in lines[:8]:\n                    print('  ', l)\n\""
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "python3 -c \"\nimport urllib.request\nimport pdfplumber\nimport io\n\nfor name, url in [\n    ('Dehydrated Apples', 'https://www.ams.usda.gov/sites/default/files/media/Dehydrated_Apples_Standard%5B1%5D.pdf'),\n    ('Dehydrated Grapefruit Juice', 'https://www.ams.usda.gov/sites/default/files/media/Dehydrated_Grapefruit_Juice_Standard%5B1%5D.pdf'),\n]:\n    data = urllib.request.urlopen(url).read()\n    with pdfplumber.open(io.BytesIO(data)) as pdf:\n        print(f'=== {name} ===')\n        for i in range(min(3, len(pdf.pages))):\n            print(f'Page {i+1}:')\n            print(pdf.pages[i].extract_text()[:400])\n\""
+        ]
+      }
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "python3 -c \"\n# Final calculation and output check\nsuperseded = 2\ntotal = 4\npct = (superseded / total) * 100\nprint(f'Calculation: {superseded}/{total} = {pct}%')\nprint(f'{round(pct)}%')\n\""
+        ]
+      }
+    },
+    {
+      "kind": "finish",
+      "args": {
+        "summary": "We analyzed the July 2, 1959 USDA standards document (\"United States standards for grades of processed fruits, vegetables, and certain other products (as of July 2, 1959)\").\n\n1. In the \"DRIED or DEHYDRATED\" section, exactly 3 items are specifically marked as dehydrated:\n   - Apples, Dehydrated (Low-moisture) (Effective Nov 29, 1955)\n   - Grapefruit Juice (Dehydrated) (Effective March 19, 1956)\n   - Orange Juice (Dehydrated) (Effective Jan 27, 1956)\n\n2. In the \"FROZEN or CHILLED\" section (excluding items marked Chilled):\n   - Only 1 item contains the whole name of one of these items: \"Apples\" (Effective May 17, 1954). Neither \"Grapefruit Juice\" nor \"Orange Juice\" appears on its own (only \"Grapefruit Juice, Concentrated\", \"Orange Juice, Concentrated\", and blends).\n\n3. Status as of August 2023 for each of the 4 items:\n   - Apples, Dehydrated (Low-moisture): Superseded on July 31, 1977 (Second Issue). [SUPERSEDED]\n   - Grapefruit Juice (Dehydrated): Remains First Issue effective March 19, 1956 (7 CFR 52.1281). [NOT SUPERSEDED]\n   - Orange Juice (Dehydrated): Superseded on January 10, 1983 by the combined Orange Juice standard. [SUPERSEDED]\n   - Frozen Apples: Remains effective May 17, 1954 (format reprinted/updated). [NOT SUPERSEDED]\n\n4. Out of 4 standards, 2 have been superseded:\n   2 / 4 = 50%.",
+        "final_verification": {
+          "checks": [
+            "python3 -c \"\n# Verification check for the calculation\nitems = [\n    ('Apples, Dehydrated (Low-moisture)', 'Nov 29, 1955', 'July 31, 1977', True),\n    ('Grapefruit Juice (Dehydrated)', 'March 19, 1956', 'March 19, 1956 (still 1st issue in 7 CFR 52.1281)', False),\n    ('Orange Juice (Dehydrated)', 'Jan 27, 1956', 'Jan 10, 1983 (superseded in unified Orange Juice)', True),\n    ('Frozen Apples', 'May 17, 1954', 'May 17, 1954 (reprinted with same effective date)', False)\n]\nsuperseded = sum(1 for item in items if item[3])\ntotal = len(items)\npercentage = round((superseded / total) * 100)\nprint(f'{percentage}%')\n\""
+          ]
+        }
+      }
+    }
+  ],
+  "gru": {
+    "api_calls": 45,
+    "cost": 0.1269496875,
+    "prompt_tokens": 826873,
+    "completion_tokens": 9854,
+    "total_tokens": 836727,
+    "cache": {
+      "n_calls": 45,
+      "total_prompt_tokens": 826873,
+      "reported_cached_tokens": 597345,
+      "reported_cache_hit_pct": 72.24,
+      "estimated_reused_tokens": 798625,
+      "estimated_cache_hit_pct": 96.58,
+      "per_call": [
+        {
+          "prompt_tokens": 1943,
+          "completion_tokens": 185,
+          "reported_cached_tokens": 0,
+          "estimated_reused_tokens": 0,
+          "estimated_new_tokens": 1943
+        },
+        {
+          "prompt_tokens": 2089,
+          "completion_tokens": 89,
+          "reported_cached_tokens": 0,
+          "estimated_reused_tokens": 2089,
+          "estimated_new_tokens": 0
+        },
+        {
+          "prompt_tokens": 2271,
+          "completion_tokens": 301,
+          "reported_cached_tokens": 0,
+          "estimated_reused_tokens": 2178,
+          "estimated_new_tokens": 93
+        },
+        {
+          "prompt_tokens": 5313,
+          "completion_tokens": 321,
+          "reported_cached_tokens": 0,
+          "estimated_reused_tokens": 2572,
+          "estimated_new_tokens": 2741
+        },
+        {
+          "prompt_tokens": 6109,
+          "completion_tokens": 303,
+          "reported_cached_tokens": 0,
+          "estimated_reused_tokens": 5634,
+          "estimated_new_tokens": 475
+        },
+        {
+          "prompt_tokens": 7719,
+          "completion_tokens": 168,
+          "reported_cached_tokens": 0,
+          "estimated_reused_tokens": 6412,
+          "estimated_new_tokens": 1307
+        },
+        {
+          "prompt_tokens": 7895,
+          "completion_tokens": 155,
+          "reported_cached_tokens": 3869,
+          "estimated_reused_tokens": 7887,
+          "estimated_new_tokens": 8
+        },
+        {
+          "prompt_tokens": 8058,
+          "completion_tokens": 203,
+          "reported_cached_tokens": 3863,
+          "estimated_reused_tokens": 8050,
+          "estimated_new_tokens": 8
+        },
+        {
+          "prompt_tokens": 8286,
+          "completion_tokens": 138,
+          "reported_cached_tokens": 3859,
+          "estimated_reused_tokens": 8261,
+          "estimated_new_tokens": 25
+        },
+        {
+          "prompt_tokens": 8433,
+          "completion_tokens": 79,
+          "reported_cached_tokens": 3854,
+          "estimated_reused_tokens": 8424,
+          "estimated_new_tokens": 9
+        },
+        {
+          "prompt_tokens": 9034,
+          "completion_tokens": 98,
+          "reported_cached_tokens": 3860,
+          "estimated_reused_tokens": 8512,
+          "estimated_new_tokens": 522
+        },
+        {
+          "prompt_tokens": 9267,
+          "completion_tokens": 23,
+          "reported_cached_tokens": 3857,
+          "estimated_reused_tokens": 9132,
+          "estimated_new_tokens": 135
+        },
+        {
+          "prompt_tokens": 10230,
+          "completion_tokens": 81,
+          "reported_cached_tokens": 0,
+          "estimated_reused_tokens": 9290,
+          "estimated_new_tokens": 940
+        },
+        {
+          "prompt_tokens": 10424,
+          "completion_tokens": 183,
+          "reported_cached_tokens": 7734,
+          "estimated_reused_tokens": 10311,
+          "estimated_new_tokens": 113
+        },
+        {
+          "prompt_tokens": 10837,
+          "completion_tokens": 155,
+          "reported_cached_tokens": 3867,
+          "estimated_reused_tokens": 10607,
+          "estimated_new_tokens": 230
+        },
+        {
+          "prompt_tokens": 11793,
+          "completion_tokens": 136,
+          "reported_cached_tokens": 7757,
+          "estimated_reused_tokens": 10992,
+          "estimated_new_tokens": 801
+        },
+        {
+          "prompt_tokens": 12849,
+          "completion_tokens": 126,
+          "reported_cached_tokens": 7778,
+          "estimated_reused_tokens": 11929,
+          "estimated_new_tokens": 920
+        },
+        {
+          "prompt_tokens": 14248,
+          "completion_tokens": 252,
+          "reported_cached_tokens": 11708,
+          "estimated_reused_tokens": 12975,
+          "estimated_new_tokens": 1273
+        },
+        {
+          "prompt_tokens": 15245,
+          "completion_tokens": 335,
+          "reported_cached_tokens": 11728,
+          "estimated_reused_tokens": 14500,
+          "estimated_new_tokens": 745
+        },
+        {
+          "prompt_tokens": 16319,
+          "completion_tokens": 119,
+          "reported_cached_tokens": 11748,
+          "estimated_reused_tokens": 15580,
+          "estimated_new_tokens": 739
+        },
+        {
+          "prompt_tokens": 16892,
+          "completion_tokens": 89,
+          "reported_cached_tokens": 11749,
+          "estimated_reused_tokens": 16438,
+          "estimated_new_tokens": 454
+        },
+        {
+          "prompt_tokens": 17893,
+          "completion_tokens": 99,
+          "reported_cached_tokens": 15686,
+          "estimated_reused_tokens": 16981,
+          "estimated_new_tokens": 912
+        },
+        {
+          "prompt_tokens": 18241,
+          "completion_tokens": 83,
+          "reported_cached_tokens": 15680,
+          "estimated_reused_tokens": 17992,
+          "estimated_new_tokens": 249
+        },
+        {
+          "prompt_tokens": 19297,
+          "completion_tokens": 379,
+          "reported_cached_tokens": 15700,
+          "estimated_reused_tokens": 18324,
+          "estimated_new_tokens": 973
+        },
+        {
+          "prompt_tokens": 19682,
+          "completion_tokens": 261,
+          "reported_cached_tokens": 15691,
+          "estimated_reused_tokens": 19676,
+          "estimated_new_tokens": 6
+        },
+        {
+          "prompt_tokens": 19952,
+          "completion_tokens": 192,
+          "reported_cached_tokens": 15684,
+          "estimated_reused_tokens": 19943,
+          "estimated_new_tokens": 9
+        },
+        {
+          "prompt_tokens": 20153,
+          "completion_tokens": 167,
+          "reported_cached_tokens": 15674,
+          "estimated_reused_tokens": 20144,
+          "estimated_new_tokens": 9
+        },
+        {
+          "prompt_tokens": 20739,
+          "completion_tokens": 174,
+          "reported_cached_tokens": 15677,
+          "estimated_reused_tokens": 20320,
+          "estimated_new_tokens": 419
+        },
+        {
+          "prompt_tokens": 21631,
+          "completion_tokens": 283,
+          "reported_cached_tokens": 11767,
+          "estimated_reused_tokens": 20913,
+          "estimated_new_tokens": 718
+        },
+        {
+          "prompt_tokens": 22471,
+          "completion_tokens": 175,
+          "reported_cached_tokens": 19625,
+          "estimated_reused_tokens": 21914,
+          "estimated_new_tokens": 557
+        },
+        {
+          "prompt_tokens": 23331,
+          "completion_tokens": 190,
+          "reported_cached_tokens": 19638,
+          "estimated_reused_tokens": 22646,
+          "estimated_new_tokens": 685
+        },
+        {
+          "prompt_tokens": 23773,
+          "completion_tokens": 159,
+          "reported_cached_tokens": 19635,
+          "estimated_reused_tokens": 23521,
+          "estimated_new_tokens": 252
+        },
+        {
+          "prompt_tokens": 24343,
+          "completion_tokens": 143,
+          "reported_cached_tokens": 19637,
+          "estimated_reused_tokens": 23932,
+          "estimated_new_tokens": 411
+        },
+        {
+          "prompt_tokens": 25295,
+          "completion_tokens": 391,
+          "reported_cached_tokens": 19651,
+          "estimated_reused_tokens": 24486,
+          "estimated_new_tokens": 809
+        },
+        {
+          "prompt_tokens": 26616,
+          "completion_tokens": 396,
+          "reported_cached_tokens": 23610,
+          "estimated_reused_tokens": 25686,
+          "estimated_new_tokens": 930
+        },
+        {
+          "prompt_tokens": 27996,
+          "completion_tokens": 181,
+          "reported_cached_tokens": 23638,
+          "estimated_reused_tokens": 27012,
+          "estimated_new_tokens": 984
+        },
+        {
+          "prompt_tokens": 28738,
+          "completion_tokens": 239,
+          "reported_cached_tokens": 23644,
+          "estimated_reused_tokens": 28177,
+          "estimated_new_tokens": 561
+        },
+        {
+          "prompt_tokens": 29740,
+          "completion_tokens": 236,
+          "reported_cached_tokens": 27600,
+          "estimated_reused_tokens": 28977,
+          "estimated_new_tokens": 763
+        },
+        {
+          "prompt_tokens": 30642,
+          "completion_tokens": 416,
+          "reported_cached_tokens": 27612,
+          "estimated_reused_tokens": 29976,
+          "estimated_new_tokens": 666
+        },
+        {
+          "prompt_tokens": 32115,
+          "completion_tokens": 415,
+          "reported_cached_tokens": 27640,
+          "estimated_reused_tokens": 31058,
+          "estimated_new_tokens": 1057
+        },
+        {
+          "prompt_tokens": 33598,
+          "completion_tokens": 347,
+          "reported_cached_tokens": 0,
+          "estimated_reused_tokens": 32530,
+          "estimated_new_tokens": 1068
+        },
+        {
+          "prompt_tokens": 34803,
+          "completion_tokens": 374,
+          "reported_cached_tokens": 31638,
+          "estimated_reused_tokens": 33945,
+          "estimated_new_tokens": 858
+        },
+        {
+          "prompt_tokens": 36047,
+          "completion_tokens": 237,
+          "reported_cached_tokens": 31657,
+          "estimated_reused_tokens": 35177,
+          "estimated_new_tokens": 870
+        },
+        {
+          "prompt_tokens": 37155,
+          "completion_tokens": 83,
+          "reported_cached_tokens": 31671,
+          "estimated_reused_tokens": 36284,
+          "estimated_new_tokens": 871
+        },
+        {
+          "prompt_tokens": 37368,
+          "completion_tokens": 695,
+          "reported_cached_tokens": 31659,
+          "estimated_reused_tokens": 37238,
+          "estimated_new_tokens": 130
+        }
+      ]
+    }
+  },
+  "minions": [
+    {
+      "delegation_id": "t1",
+      "returns": "findings",
+      "mode": "agentic",
+      "description": "Search online / fetch the July 2, 1959 US standards for grades of processed fruits, vegetables, and certain other products (or CFR / USDA document), and find:\n1. All items listed in the \"dried and dehydrated\" section (or products listed as dehydrated / dried and dehydrated).\n2. Specifically identify items marked as \"dehydrated\".\n3. Check the \"Frozen\" or \"Frozen/Chilled\" section for any items that contain the whole name of those items, excluding any marked \"Chilled\".\n4. Determine the effective dates / version dates given in the 1959 standards for these items.\n5. Check current (as of August 2023) USDA AMS standards for grades of processed fruits and vegetables to see which of these standards have been superseded by a new version since the 1959 date.\n6. Return full details of all matched items, their 1959 dates, their current status / latest version dates, and the calculation of superseded percentage.",
+      "scope": ".",
+      "api_calls": 30,
+      "prompt_tokens": 601321,
+      "completion_tokens": 12316,
+      "total_tokens": 613637,
+      "exit_status": "Submitted",
+      "trajectory_path": "experiments/exp6/results/gemini-deepseek-paired-l3/676e5e31/minions/t1.traj.json",
+      "output_path": "experiments/exp6/results/gemini-deepseek-paired-l3/676e5e31/delegations/t1.txt",
+      "cache": {
+        "n_calls": 30,
+        "total_prompt_tokens": 601321,
+        "reported_cached_tokens": 486272,
+        "reported_cache_hit_pct": 80.87,
+        "estimated_reused_tokens": 575896,
+        "estimated_cache_hit_pct": 95.77,
+        "per_call": [
+          {
+            "prompt_tokens": 1023,
+            "completion_tokens": 90,
+            "reported_cached_tokens": 448,
+            "estimated_reused_tokens": 0,
+            "estimated_new_tokens": 1023
+          },
+          {
+            "prompt_tokens": 4006,
+            "completion_tokens": 133,
+            "reported_cached_tokens": 960,
+            "estimated_reused_tokens": 1113,
+            "estimated_new_tokens": 2893
+          },
+          {
+            "prompt_tokens": 4177,
+            "completion_tokens": 210,
+            "reported_cached_tokens": 3904,
+            "estimated_reused_tokens": 4139,
+            "estimated_new_tokens": 38
+          },
+          {
+            "prompt_tokens": 4450,
+            "completion_tokens": 230,
+            "reported_cached_tokens": 4096,
+            "estimated_reused_tokens": 4387,
+            "estimated_new_tokens": 63
+          },
+          {
+            "prompt_tokens": 7123,
+            "completion_tokens": 352,
+            "reported_cached_tokens": 4352,
+            "estimated_reused_tokens": 4680,
+            "estimated_new_tokens": 2443
+          },
+          {
+            "prompt_tokens": 7866,
+            "completion_tokens": 323,
+            "reported_cached_tokens": 7040,
+            "estimated_reused_tokens": 7475,
+            "estimated_new_tokens": 391
+          },
+          {
+            "prompt_tokens": 9121,
+            "completion_tokens": 776,
+            "reported_cached_tokens": 448,
+            "estimated_reused_tokens": 8189,
+            "estimated_new_tokens": 932
+          },
+          {
+            "prompt_tokens": 10758,
+            "completion_tokens": 448,
+            "reported_cached_tokens": 384,
+            "estimated_reused_tokens": 9897,
+            "estimated_new_tokens": 861
+          },
+          {
+            "prompt_tokens": 11689,
+            "completion_tokens": 325,
+            "reported_cached_tokens": 9024,
+            "estimated_reused_tokens": 11206,
+            "estimated_new_tokens": 483
+          },
+          {
+            "prompt_tokens": 12727,
+            "completion_tokens": 773,
+            "reported_cached_tokens": 384,
+            "estimated_reused_tokens": 12014,
+            "estimated_new_tokens": 713
+          },
+          {
+            "prompt_tokens": 13748,
+            "completion_tokens": 73,
+            "reported_cached_tokens": 12608,
+            "estimated_reused_tokens": 13500,
+            "estimated_new_tokens": 248
+          },
+          {
+            "prompt_tokens": 15952,
+            "completion_tokens": 76,
+            "reported_cached_tokens": 11584,
+            "estimated_reused_tokens": 13821,
+            "estimated_new_tokens": 2131
+          },
+          {
+            "prompt_tokens": 18010,
+            "completion_tokens": 78,
+            "reported_cached_tokens": 10688,
+            "estimated_reused_tokens": 16028,
+            "estimated_new_tokens": 1982
+          },
+          {
+            "prompt_tokens": 20059,
+            "completion_tokens": 312,
+            "reported_cached_tokens": 15936,
+            "estimated_reused_tokens": 18088,
+            "estimated_new_tokens": 1971
+          },
+          {
+            "prompt_tokens": 20502,
+            "completion_tokens": 71,
+            "reported_cached_tokens": 19968,
+            "estimated_reused_tokens": 20371,
+            "estimated_new_tokens": 131
+          },
+          {
+            "prompt_tokens": 22155,
+            "completion_tokens": 308,
+            "reported_cached_tokens": 20416,
+            "estimated_reused_tokens": 20573,
+            "estimated_new_tokens": 1582
+          },
+          {
+            "prompt_tokens": 22748,
+            "completion_tokens": 560,
+            "reported_cached_tokens": 13632,
+            "estimated_reused_tokens": 22463,
+            "estimated_new_tokens": 285
+          },
+          {
+            "prompt_tokens": 23429,
+            "completion_tokens": 1200,
+            "reported_cached_tokens": 17920,
+            "estimated_reused_tokens": 23308,
+            "estimated_new_tokens": 121
+          },
+          {
+            "prompt_tokens": 24828,
+            "completion_tokens": 82,
+            "reported_cached_tokens": 23360,
+            "estimated_reused_tokens": 24629,
+            "estimated_new_tokens": 199
+          },
+          {
+            "prompt_tokens": 26433,
+            "completion_tokens": 454,
+            "reported_cached_tokens": 22656,
+            "estimated_reused_tokens": 24910,
+            "estimated_new_tokens": 1523
+          },
+          {
+            "prompt_tokens": 26946,
+            "completion_tokens": 76,
+            "reported_cached_tokens": 26368,
+            "estimated_reused_tokens": 26887,
+            "estimated_new_tokens": 59
+          },
+          {
+            "prompt_tokens": 28813,
+            "completion_tokens": 517,
+            "reported_cached_tokens": 24704,
+            "estimated_reused_tokens": 27022,
+            "estimated_new_tokens": 1791
+          },
+          {
+            "prompt_tokens": 29423,
+            "completion_tokens": 86,
+            "reported_cached_tokens": 22080,
+            "estimated_reused_tokens": 29330,
+            "estimated_new_tokens": 93
+          },
+          {
+            "prompt_tokens": 30997,
+            "completion_tokens": 536,
+            "reported_cached_tokens": 28736,
+            "estimated_reused_tokens": 29509,
+            "estimated_new_tokens": 1488
+          },
+          {
+            "prompt_tokens": 31911,
+            "completion_tokens": 605,
+            "reported_cached_tokens": 30912,
+            "estimated_reused_tokens": 31533,
+            "estimated_new_tokens": 378
+          },
+          {
+            "prompt_tokens": 32579,
+            "completion_tokens": 572,
+            "reported_cached_tokens": 29312,
+            "estimated_reused_tokens": 32516,
+            "estimated_new_tokens": 63
+          },
+          {
+            "prompt_tokens": 33269,
+            "completion_tokens": 423,
+            "reported_cached_tokens": 32512,
+            "estimated_reused_tokens": 33151,
+            "estimated_new_tokens": 118
+          },
+          {
+            "prompt_tokens": 33762,
+            "completion_tokens": 69,
+            "reported_cached_tokens": 33152,
+            "estimated_reused_tokens": 33692,
+            "estimated_new_tokens": 70
+          },
+          {
+            "prompt_tokens": 35146,
+            "completion_tokens": 2488,
+            "reported_cached_tokens": 26880,
+            "estimated_reused_tokens": 33831,
+            "estimated_new_tokens": 1315
+          },
+          {
+            "prompt_tokens": 37671,
+            "completion_tokens": 70,
+            "reported_cached_tokens": 31808,
+            "estimated_reused_tokens": 37634,
+            "estimated_new_tokens": 37
+          }
+        ]
+      }
+    }
+  ],
+  "minions_total": {
+    "count": 1,
+    "api_calls": 30,
+    "prompt_tokens": 601321,
+    "completion_tokens": 12316,
+    "total_tokens": 613637
+  },
+  "cache_totals": {
+    "n_sessions": 2,
+    "n_calls": 75,
+    "total_prompt_tokens": 1428194,
+    "reported_cached_tokens": 1083617,
+    "reported_over_prompt_tokens": 1428194,
+    "reported_sessions": 2,
+    "reported_cache_hit_pct": 75.87,
+    "estimated_reused_tokens": 1374521,
+    "estimated_cache_hit_pct": 96.24
+  }
+}
