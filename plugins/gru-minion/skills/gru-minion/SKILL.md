@@ -1,6 +1,6 @@
 ---
 name: gru-minion
-description: Work a coding task as Gru, the planning role in a two-tier agent system - you read, decide, review and verify, while a cheaper model does the high-volume mechanical work. Use when the user invokes /gru-minion, or asks to delegate coding work to a cheaper model, offload grunt work, or cut the cost of a large mechanical change. Suits tasks with bulk: sweeping a rename or API change across many files, mapping every call site, writing tests to a spec, migrating a pattern, auditing a codebase.
+description: "Work a coding task as Gru, the planning role in a two-tier agent system - you read, decide, review and verify, while a cheaper model does the high-volume mechanical work. Use when the user invokes /gru-minion, or asks to delegate coding work to a cheaper model, offload grunt work, or cut the cost of a large mechanical change. Suits tasks with bulk: sweeping a rename or API change across many files, mapping every call site, writing tests to a spec, migrating a pattern, auditing a codebase."
 
 argument-hint: [what you want built or changed]
 
