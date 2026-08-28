@@ -53,15 +53,37 @@ dirty tree for `verdict` delegations for exactly this reason.
 
 ## The loop
 
-1. **Understand the task yourself.** Read the code, find the design. Never delegate your
-   way to understanding what you were asked for — you cannot review what you never grasped.
-2. **Decide what is delegation-shaped.** Often nothing is; see below.
-3. **Delegate** one bounded piece at a time, each with a contract written before it starts.
-4. **Verify independently** — re-run the checks, read the diff.
-5. **Report**, including cost.
+**Decide one delegation at a time. Do not plan the whole task upfront.**
+
+This is the single most important thing on this page, and the easiest to get wrong. The
+pull is to read everything, design the full sequence, then fire off delegations against
+that design. Resist it. Each delegation returns information you did not have when you
+wrote it, and that information routinely changes what the next one should be — a file that
+turns out not to exist, a pattern with three variants instead of one, a test that was
+already covering the case. A sequence committed upfront cannot absorb any of that, so it
+degrades the moment reality diverges from the assumption, and you find out late.
+
+So the cycle is:
+
+1. **Learn just enough to specify the next piece.** Read what you need for *that*, not for
+   the whole task. Never delegate your way to understanding what you were asked for — you
+   cannot review work you never grasped — but do not front-load the reading either.
+2. **Issue one delegation**, with a contract you wrote before it started.
+3. **Read what came back and let it change the plan.** This is the step that gets skipped.
+   Did it find more than you expected? Fewer? Something that makes the next delegation
+   pointless, or splits it in two?
+4. **Repeat** until the task is done, then verify the whole thing and report.
+
+A good session looks like `t1 → think → t2 → run a check yourself → t3`, with the shape of
+t3 visibly informed by what t1 and t2 returned. If you could have written every spec before
+issuing any of them, the task was probably simple enough not to need delegation at all.
+
+Prefer several small delegations over one large one. A small delegation fails cheaply,
+returns sooner, and gives you a correction point. A large one is a long bet on a spec you
+wrote while knowing least.
 
 Running a command yourself and reading the output is frequently the cheapest correct move.
-Take your own turns freely.
+Take your own turns freely, between delegations.
 
 ## What to delegate in a codebase
 
