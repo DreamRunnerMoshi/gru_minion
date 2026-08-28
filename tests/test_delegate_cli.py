@@ -261,3 +261,31 @@ def test_progress_is_written_for_a_real_delegation(tmp_path):
     kinds = [e["event"] for e in events]
     assert kinds == ["start", "done"], "a oneshot runs no shell commands, so start and done only"
     assert events[-1]["total_tokens"] == 110
+
+
+def test_ritual_artifacts_are_cleaned_up_but_pre_existing_ones_are_left(tmp_path):
+    """The submission ritual makes the minion write summary.md/findings.md into the
+    working directory. Their contents already reached us through the submission, so in a
+    real repository they are litter — and they defeat the "no new untracked files" check
+    that catches a minion leaving other junk behind. But a file the operator already had
+    is theirs, not ours."""
+    from orchestrator.minion.runner import RITUAL_ARTIFACTS, MinionRunner
+
+    work = tmp_path / "w"
+    work.mkdir()
+    (work / "summary.md").write_text("MINE — pre-existing, must survive")
+    (work / "findings.md").write_text("created by the delegation")
+
+    class _Env:
+        cwd = str(work)
+
+    runner = MinionRunner(
+        env=_Env(), model_kwargs={}, agent_kwargs={},
+        system_template="", instance_template="",
+    )
+    removed = runner._cleanup_ritual_artifacts(pre_existing={"summary.md"})
+
+    assert removed == ["findings.md"]
+    assert (work / "summary.md").read_text() == "MINE — pre-existing, must survive"
+    assert not (work / "findings.md").exists()
+    assert "patch.txt" in RITUAL_ARTIFACTS, "the benchmark ritual's artifact is covered too"

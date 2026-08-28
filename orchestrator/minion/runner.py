@@ -46,6 +46,14 @@ from orchestrator.minion.model import MinionModel
 
 VERDICT_SUMMARY_MARKER = "===PATCH==="
 
+# Files the submission ritual makes the minion write into the working directory. Their
+# contents reach us through the submission itself, so once a delegation returns they are
+# spent — and in a real repository they are litter, and worse, they defeat the one check
+# that would catch a minion leaving other junk behind ("no new untracked files"). Removed
+# after the run, but only if the delegation created them: a file the operator already had
+# is theirs.
+RITUAL_ARTIFACTS = ("findings.md", "summary.md", "patch.txt")
+
 ONESHOT_SYSTEM = (
     "You are a minion — the execution role in a two-tier coding-agent system. You were handed exactly "
     "one bounded piece of work by Gru, the planning role, along with all the material needed to do it. "
@@ -245,8 +253,23 @@ class MinionRunner:
             },
         )
 
+    def _cleanup_ritual_artifacts(self, pre_existing: set[str]) -> list[str]:
+        cwd = Path(getattr(self.env, "cwd", ".") or ".")
+        removed = []
+        for name in RITUAL_ARTIFACTS:
+            path = cwd / name
+            if name not in pre_existing and path.is_file():
+                try:
+                    path.unlink()
+                    removed.append(name)
+                except OSError:
+                    pass
+        return removed
+
     def _run_agentic(self, args: dict, material: str, delegation_id: str) -> DelegationResult:
         commands = 0
+        cwd = Path(getattr(self.env, "cwd", ".") or ".")
+        pre_existing = {name for name in RITUAL_ARTIFACTS if (cwd / name).is_file()}
 
         def on_command(command: str, returncode: int, output: str) -> None:
             nonlocal commands
@@ -282,6 +305,8 @@ class MinionRunner:
             **self.agent_kwargs,
         )
         result = agent.run(subtask=args, prior_delegation_outputs=material)
+        if removed := self._cleanup_ritual_artifacts(pre_existing):
+            self._progress(event="cleanup", delegation_id=delegation_id, removed=removed)
         return DelegationResult(
             submission=result.get("submission", ""),
             tokens=extract_token_usage(agent.messages),

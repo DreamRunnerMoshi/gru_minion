@@ -174,10 +174,23 @@ Checks are the only thing that decides a verdict, so they carry the whole weight
 
 - Make them **prove the behaviour**, not the edit: `pytest tests/test_auth.py -q` beats
   `grep -q farewell greet.py`.
-- Guard the **blast radius**, not your prediction of it. If a delegation must not touch
-  something, add `git diff --quiet path/to/file`. A green verdict proves exactly what the
-  checks assert and nothing more.
+- **Confirm the check fails before the work is done.** Run it at baseline first. A check
+  that already passes proves nothing, and you will not be able to tell the difference from
+  a green verdict. This costs one command and is the single cheapest way to avoid being
+  lied to by your own checks.
+- Guard the **blast radius**, not your prediction of it. A green verdict proves exactly
+  what the checks assert and nothing more.
 - Include the **existing** suite when a change could break it, not only the new case.
+
+For blast radius specifically, **`git diff` is not enough** — it only sees modifications to
+tracked files and is blind to new ones, so a minion that leaves `*.py.backup` files or a
+stray script sails straight past it. Real case: a verdict passed on all four checks while
+leaving nine out-of-scope files in the repository. Check for new files explicitly:
+
+```bash
+test -z "$(git ls-files --others --exclude-standard)"   # nothing new left behind
+git diff --quiet path/you/must/not/touch                # protected files unmodified
+```
 
 ## Verifying — the part that matters
 
