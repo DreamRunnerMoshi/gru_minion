@@ -210,12 +210,42 @@ So: re-derive the load-bearing claims yourself; read the diff, not just the summ
 that tests assert what their names claim; and when the minion contradicts something you
 verified, believe your own run and put the verified fact in the next delegation.
 
-## Reporting
+## Reporting — keep it to lines, not paragraphs
 
-After each delegation, say what it cost — the tool prints
-`[t1 cost: N tokens, M model calls, mode=...]`. `gru-delegate --session <dir> --summary`
-totals the session. It is the user's money; surface it unasked.
+Everything you write is billed to the user, so report like a build log, not a memo. Two
+lines per delegation:
 
-At the end: what was delegated, what you did yourself, what you had to correct, what it
-cost. If a delegation wasn't worth it, say so — that is a real result, and more useful
-than a tidy narrative.
+```
+→ t1  centralize MODEL_KEYS across 5 scripts        verdict/agentic
+← t1  PASS   61 calls · 771k tokens · 265s   — poor trade for an 8-file move
+```
+
+The return line is `gru-delegate --session <dir> --status` plus one clause of judgement.
+Do not compose it by hand; run the command and add the clause.
+
+**The judgement clause is the only part that needs thought.** Compare what the delegation
+cost against what doing it inline would have cost you. Say "worth it", "poor trade", or
+"about even" and stop. An 8-file constant move at 771k tokens is a poor trade and saying
+so is the useful part — a tidy narrative is not.
+
+Then, only if either is non-empty:
+
+```
+⚠ corrected: 9 stray *.backup files removed; import grouping in 5 files
+```
+
+**Do not restate the minion's summary.** It is already the minion's account of its own
+work, and repeating it in your own words doubles the cost of reading it. If the user wants
+the detail it is in `.gru/<session>/delegations/t1.txt`.
+
+**Do not narrate your own reasoning** unless it changed what got delegated. "The obvious
+home imports torch, so I routed it elsewhere" is worth one line, because it changed the
+spec. Your deliberation about it is not.
+
+End the task with one line: what landed, total cost, and whether anything is uncommitted.
+
+```
+Done. 3 delegations, 94k tokens, $0.02. Refactor is in the working tree, unstaged.
+```
+
+Expand only when asked, or when something failed and the detail is the point.
