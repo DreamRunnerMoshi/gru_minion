@@ -1,7 +1,9 @@
 ---
 name: gru-minion
 description: Work a coding task as Gru, the planning role in a two-tier agent system - you read, decide, review and verify, while a cheaper model does the high-volume mechanical work. Use when the user invokes /gru-minion, or asks to delegate coding work to a cheaper model, offload grunt work, or cut the cost of a large mechanical change. Suits tasks with bulk: sweeping a rename or API change across many files, mapping every call site, writing tests to a spec, migrating a pattern, auditing a codebase.
+
 argument-hint: [what you want built or changed]
+
 allowed-tools: [Read, Write, Edit, Glob, Grep, Bash]
 ---
 
@@ -24,12 +26,32 @@ money. Delegate the second and you have bought a confident answer you cannot che
 Once, at the start:
 
 ```bash
-gru-delegate --help >/dev/null 2>&1 || echo "not installed"
-[ -n "$OPENROUTER_API_KEY" ] || echo "OPENROUTER_API_KEY not set"
+gru-delegate --help >/dev/null 2>&1 || echo "gru-delegate not installed"
+if [ -n "$GRU_MINION_API_BASE" ]; then
+  printenv "$GRU_MINION_API_KEY_ENV" >/dev/null \
+    && echo "minion: ${GRU_MINION_MODEL:-unset} via $GRU_MINION_API_BASE" \
+    || echo "gateway set but \$$GRU_MINION_API_KEY_ENV is empty"
+else
+  [ -n "$OPENROUTER_API_KEY" ] && echo "minion: ${GRU_MINION_MODEL:-openrouter/z-ai/glm-4.5-air}" \
+    || echo "no minion configured"
+fi
 git status --porcelain
 ```
 
-If `OPENROUTER_API_KEY` is unset, say so and stop — there is no minion without it.
+The minion can be reached two ways, and the check above tells you which is live:
+
+- **A provider litellm routes by prefix**, needing only a key — `OPENROUTER_API_KEY` for
+  the `openrouter/...` default.
+- **A gateway**, via `GRU_MINION_API_BASE` plus `GRU_MINION_MODEL` and
+  `GRU_MINION_API_KEY_ENV` (which names the variable holding the key, not the key). This
+  is how the minion runs on a subscription you already pay for — an Anthropic- or
+  OpenAI-compatible endpoint, or a self-hosted one. **On a gateway there is no dollar
+  cost to report**: litellm has no price list for it, so `--cost-limit` does nothing and
+  the only live bounds are the config's step and wall-time limits. Report tokens and
+  calls, and do not quote a dollar figure you did not measure.
+
+If neither is configured, say so and stop: there is no minion without one, and the whole
+point is that the minion is not you.
 
 If `gru-delegate` is missing, say so and offer to install it, once:
 
@@ -55,52 +77,32 @@ dirty tree for `verdict` delegations for exactly this reason.
 
 **Decide one delegation at a time. Do not plan the whole task upfront.**
 
-This is the single most important thing on this page, and the easiest to get wrong. The
-pull is to read everything, design the full sequence, then fire off delegations against
-that design. Resist it. Each delegation returns information you did not have when you
-wrote it, and that information routinely changes what the next one should be — a file that
-turns out not to exist, a pattern with three variants instead of one, a test that was
-already covering the case. A sequence committed upfront cannot absorb any of that, so it
-degrades the moment reality diverges from the assumption, and you find out late.
+This is the single most important thing on this page, and the easiest to get wrong. The pull is to read everything, design the full sequence, then fire off delegations against that design. Resist it. Each delegation returns information you did not have when you wrote it, and that information routinely changes what the next one should be — a file that turns out not to exist, a pattern with three variants instead of one, a test that was already covering the case. A sequence committed upfront cannot absorb any of that, so it degrades the moment reality diverges from the assumption, and you find out late.
 
 So the cycle is:
 
-1. **Learn just enough to specify the next piece.** Read what you need for *that*, not for
-   the whole task. Never delegate your way to understanding what you were asked for — you
-   cannot review work you never grasped — but do not front-load the reading either.
+1. **Learn just enough to specify the next piece.** Read what you need for *that*, not for the whole task. Never delegate your way to understanding what you were asked for — you cannot review work you never grasped — but do not front-load the reading either.
 2. **Issue one delegation**, with a contract you wrote before it started.
-3. **Read what came back and let it change the plan.** This is the step that gets skipped.
-   Did it find more than you expected? Fewer? Something that makes the next delegation
-   pointless, or splits it in two?
+3. **Read what came back and let it change the plan.** This is the step that gets skipped. Did it find more than you expected? Fewer? Something that makes the next delegation pointless, or splits it in two?
 4. **Repeat** until the task is done, then verify the whole thing and report.
 
-A good session looks like `t1 → think → t2 → run a check yourself → t3`, with the shape of
-t3 visibly informed by what t1 and t2 returned. If you could have written every spec before
-issuing any of them, the task was probably simple enough not to need delegation at all.
+A good session looks like `t1 → think → t2 → run a check yourself → t3`, with the shape of t3 visibly informed by what t1 and t2 returned. If you could have written every spec before issuing any of them, the task was probably simple enough not to need delegation at all.
 
-Prefer several small delegations over one large one. A small delegation fails cheaply,
-returns sooner, and gives you a correction point. A large one is a long bet on a spec you
-wrote while knowing least.
+Prefer several small delegations over one large one. A small delegation fails cheaply, returns sooner, and gives you a correction point. A large one is a long bet on a spec you wrote while knowing least.
 
-Running a command yourself and reading the output is frequently the cheapest correct move.
-Take your own turns freely, between delegations.
+Running a command yourself and reading the output is frequently the cheapest correct move. Take your own turns freely, between delegations.
 
 ## What to delegate in a codebase
 
 Four patterns carry almost all the value:
 
-**Locate** — `findings` / `agentic`. "Find every construction site of `Session` and report
-file:line with the surrounding call." You get a map without reading twelve files yourself.
+**Locate** — `findings` / `agentic`. "Find every construction site of `Session` and report file:line with the surrounding call." You get a map without reading twelve files yourself.
 
-**Sweep** — `verdict` / `agentic`. "Apply this exact rename across these 40 files."
-Mechanical, wide, and checkable with a build or test command.
+**Sweep** — `verdict` / `agentic`. "Apply this exact rename across these 40 files." Mechanical, wide, and checkable with a build or test command.
 
-**Test to a spec** — `verdict` / `agentic`. You enumerate the cases from your own reading;
-the minion writes them. Check is `pytest path -q`. The enumeration is the judgement and
-stays with you; the typing is volume.
+**Test to a spec** — `verdict` / `agentic`. You enumerate the cases from your own reading; the minion writes them. Check is `pytest path -q`. The enumeration is the judgement and stays with you; the typing is volume.
 
-**Digest** — `findings` / `oneshot`. "Here are six files; explain how auth flows through
-them." Supply the files via `inputs.read_paths` and it costs one call.
+**Digest** — `findings` / `oneshot`. "Here are six files; explain how auth flows through them." Supply the files via `inputs.read_paths` and it costs one call.
 
 ### Do it yourself instead
 
@@ -115,8 +117,7 @@ reliable than plain Claude Code — which is the whole way this product fails.
 
 ## Issuing a delegation
 
-An agentic delegation runs for minutes. Dispatch it in the background so you are not
-blocked, and so the user sees progress rather than a frozen prompt:
+An agentic delegation runs for minutes. Dispatch it in the background so you are not blocked, and so the user sees progress rather than a frozen prompt:
 
 ```bash
 gru-delegate --spec .gru/t1.json --session .gru/<task-name> > .gru/t1.out 2> .gru/t1.log &

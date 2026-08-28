@@ -161,6 +161,7 @@ class MinionRunner:
         env: Any,
         model_name: str,
         api_base: str | None = None,
+        api_key: str | None = None,
         cost_limit: float = 0.0,
         output_dir: Path | None = None,
         run_id: str = "test-session",
@@ -178,7 +179,15 @@ class MinionRunner:
             env=env,
             model_kwargs={
                 "model_name": model_name,
-                "model_kwargs": {**config["model"]["model_kwargs"], **({"api_base": api_base} if api_base else {})},
+                "model_kwargs": {
+                    **config["model"]["model_kwargs"],
+                    **({"api_base": api_base} if api_base else {}),
+                    # Passed per-call rather than left to litellm's provider env var, so
+                    # pointing the minion at an Anthropic-compatible gateway does not mean
+                    # exporting ANTHROPIC_API_KEY — which would silently redirect the
+                    # planner too when Gru is Claude Code.
+                    **({"api_key": api_key} if api_key else {}),
+                },
             },
             agent_kwargs=agent_kwargs,
             system_template=config["agent"]["system_template"],

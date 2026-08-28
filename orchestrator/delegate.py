@@ -183,7 +183,15 @@ def make_progress_writer(session: Path, quiet: bool) -> "Callable[[dict], None]"
 
 
 def build_environment(
-    *, session: Path, cwd: Path, model: str, cost_limit: float, minion_config: str, quiet: bool = False
+    *,
+    session: Path,
+    cwd: Path,
+    model: str,
+    cost_limit: float,
+    minion_config: str,
+    quiet: bool = False,
+    api_base: str | None = None,
+    api_key: str | None = None,
 ) -> GruEnvironment:
     session.mkdir(parents=True, exist_ok=True)
     shell = LocalEnvironmentWithCleanup(cwd=str(cwd))
@@ -193,6 +201,8 @@ def build_environment(
             load_yaml(minion_config),
             env=shell,
             model_name=model,
+            api_base=api_base,
+            api_key=api_key,
             cost_limit=cost_limit,
             output_dir=session,
             run_id=session.name,
@@ -261,7 +271,13 @@ def main() -> None:
     parser.add_argument("--session", required=True, type=Path, help="Session directory: holds delegation outputs, minion trajectories and the cost record. Reuse the same one across a working session so inputs.from can reference earlier delegations.")
     parser.add_argument("--spec", type=Path, help="JSON file holding one delegate_to_minion args object (same schema as the real tool — see orchestrator/gru/toolcall.py). Omit to read it from stdin.")
     parser.add_argument("--cwd", type=Path, default=Path.cwd(), help="Working directory the minion operates in (default: current directory)")
-    parser.add_argument("--model", default="openrouter/z-ai/glm-4.5-air", help="litellm model string for the minion")
+    # Defaults come from the environment so that a host which is not OpenRouter is
+    # configured once, in a shell profile, instead of on every delegation. The skill's
+    # command lines then stay provider-agnostic, which is the point: the same prompt has
+    # to work for someone on OpenRouter and someone on a subscription gateway.
+    parser.add_argument("--model", default=os.environ.get("GRU_MINION_MODEL", "openrouter/z-ai/glm-4.5-air"), help="litellm model string for the minion (default: $GRU_MINION_MODEL, else openrouter/z-ai/glm-4.5-air)")
+    parser.add_argument("--api-base", default=os.environ.get("GRU_MINION_API_BASE"), help="Default: $GRU_MINION_API_BASE. Base URL of an OpenAI/Anthropic-compatible gateway, for a minion served somewhere litellm has no built-in route: a self-hosted endpoint, or a subscription gateway you already pay for (e.g. Alibaba Bailian's Token Plan). Omit for a hosted provider litellm routes by prefix, like openrouter/.")
+    parser.add_argument("--api-key-env", metavar="VAR", default=os.environ.get("GRU_MINION_API_KEY_ENV"), help="Default: $GRU_MINION_API_KEY_ENV. Name of the environment variable holding the key for --api-base — the variable name, never the key itself. Deliberately not ANTHROPIC_API_KEY by default: an Anthropic-compatible gateway would otherwise need that variable exported, which also redirects Claude Code when Claude Code is the planner.")
     parser.add_argument("--minion-config", default="general/minion.yaml", help="Minion config under orchestrator/config/. The default is the general-purpose one: real repository, no patch ritual, and forbidden from touching anything it did not create. The benchmark variants (swe_bench/minion.yaml, gaia/minion.yaml) exist to score instances and are not safe against a working tree you care about.")
     parser.add_argument("--cost-limit", type=float, default=0.15, help="Hard dollar cap on this one delegation's agentic session (0 leaves the config's own)")
     parser.add_argument("--quiet", action="store_true", help="Suppress the live per-command progress lines on stderr. <session>/progress.jsonl is written either way.")
@@ -323,10 +339,31 @@ def main() -> None:
                 "first, or pass --allow-dirty to accept the risk (a recoverable snapshot is taken either way)."
             )
 
+    api_key = None
+    if args.api_key_env:
+        api_key = os.environ.get(args.api_key_env)
+        if not api_key:
+            parser.error(f"--api-key-env {args.api_key_env} given, but ${args.api_key_env} is unset or empty")
+    if api_key and not args.api_base:
+        parser.error("--api-key-env is only meaningful with --api-base")
+
+    # A dollar cap needs a price list, and litellm has none for a custom gateway: the
+    # delegation would run to its step/wall-time limit believing it was capped. Say so
+    # rather than let a silent no-op read as a guarantee.
+    if args.api_base and args.cost_limit > 0:
+        print(
+            f"note: --cost-limit {args.cost_limit} is not enforceable against --api-base "
+            "(no pricing for a custom gateway); bounded by the config's step_limit and "
+            "wall_time_limit_seconds instead",
+            file=sys.stderr,
+        )
+
     env = build_environment(
         session=args.session,
         cwd=args.cwd,
         model=args.model,
+        api_base=args.api_base,
+        api_key=api_key,
         cost_limit=args.cost_limit,
         minion_config=args.minion_config,
         quiet=args.quiet,
