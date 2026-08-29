@@ -74,6 +74,8 @@ If `gru-delegate` is missing, offer to install it, once: `uv tool install "git+h
 
 Chain with `inputs.from: ["t1"]` — a later delegation receives an earlier one's raw output. `scope` is the minion's only boundary and goes into its prompt verbatim: keep it narrow and name real paths.
 
+`--preset NAME` sets `--model`/`--minion-config`/`--cost-limit` from `orchestrator/config/presets.yaml`, a running log of what has actually been tried against real repositories, evidence included — not a claim about which model suits which task. Run `--list-presets` to see the catalog before picking one; an explicit flag still overrides the preset for that one field.
+
 Run a `oneshot` in the foreground; it returns in seconds. An `agentic` delegation runs for minutes, so dispatch it in the background and poll:
 
 ```bash

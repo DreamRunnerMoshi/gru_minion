@@ -1,0 +1,58 @@
+# Minion presets: named (model, minion-config, cost-limit) bundles, each carrying the
+# real evidence behind it. This is a running log of what has actually been tried against
+# this project's own repository — not a benchmark suite, and not a claim about which
+# model is "best" for a kind of task. Most entries have n=1: one task, one run. Read the
+# evidence before trusting a preset on a task unlike the one it was tested on, and treat
+# a preset as a documented starting point to compare against, not a verdict.
+#
+# Loaded by orchestrator/delegate.py via `--preset NAME`; `--list-presets` prints this
+# file including the evidence fields. A key starting with `_` is metadata, not a preset.
+
+_disclaimer: >
+  n=1 per entry unless stated otherwise. Every number here came from a live run recorded
+  under this project's own .gru/ sessions — see `tested`/`task` for exactly which one.
+  Nothing here is extrapolated to task shapes that weren't run.
+
+_known_risks: >
+  Independent of any specific preset: exp5 (experiments/exp5/NOTES.md, Drafting_Email.md)
+  found 15 of 24 real delegations hitting the minion's own turn-budget cap
+  (LimitsExceeded) without completing, on tasks that were often single-line edits — not
+  attributable to one model in that data, but a reminder to check exit_status per
+  delegation rather than trusting that output came back means it finished cleanly.
+
+glm-4.5-air:
+  model: openrouter/z-ai/glm-4.5-air
+  minion_config: general/minion.yaml
+  cost_limit: 0.15
+  evidence:
+    tested: "2026-08-28"
+    n: 1
+    task: >
+      Locate — grep-shaped search for every environment-variable read under
+      orchestrator/*.py, findings/agentic. Session .gru/envscan.
+    result: >
+      File/line/variable-name columns all correct (8/8). The free-text "how it is read"
+      column was wrong on 6 of 8 rows — reported os.getenv where the source used
+      os.environ.get/.setdefault, an API that appears zero times in the tree. Retrieved
+      detail was exact; the derived claim built on top of it was not — verify derived
+      columns, don't just spot-check the located facts.
+    cost: "8 shell commands, 9 model calls, 28,270 tokens, 36.1s, exit_status Submitted"
+
+qwen3.8-flash:
+  model: openrouter/qwen/qwen3.8-flash
+  minion_config: general/minion.yaml
+  cost_limit: 0.15
+  evidence:
+    tested: "2026-08-28"
+    n: 1
+    task: >
+      Identical spec to glm-4.5-air's entry above, same repo, same session shape.
+      Session .gru/envscan-qwen.
+    result: >
+      All 8 rows correct, including the derived column glm-4.5-air got wrong. Also
+      noticed and flagged, unprompted, that a stale findings.md left over from the
+      glm-4.5-air run made the same wrong os.getenv claim.
+    cost: >
+      19 shell commands (1 harmless — a `cat` on a not-yet-created file), 12 model
+      calls, 132,732 tokens, 113.3s, exit_status Submitted — roughly 4.7x the tokens
+      and 3x the wall time of glm-4.5-air on the same task.

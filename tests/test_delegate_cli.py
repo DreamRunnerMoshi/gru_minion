@@ -289,3 +289,81 @@ def test_ritual_artifacts_are_cleaned_up_but_pre_existing_ones_are_left(tmp_path
     assert (work / "summary.md").read_text() == "MINE — pre-existing, must survive"
     assert not (work / "findings.md").exists()
     assert "patch.txt" in RITUAL_ARTIFACTS, "the benchmark ritual's artifact is covered too"
+
+
+def test_preset_supplies_model_cost_limit_and_minion_config(tmp_path):
+    """--preset resolves to the (model, minion_config, cost_limit) recorded in
+    orchestrator/config/presets.yaml, so a dev can point at a benchmarked bundle by name
+    instead of copying flags by hand."""
+    spec_file = tmp_path / "spec.json"
+    spec_file.write_text(json.dumps(oneshot("locate something", read_paths=["/dev/null"])))
+    argv = [
+        "delegate",
+        "--session", str(tmp_path / "s1"),
+        "--spec", str(spec_file),
+        "--cwd", str(tmp_path),
+        "--preset", "qwen3.8-flash",
+    ]
+    captured = {}
+
+    def fake_build_environment(**kwargs):
+        captured.update(kwargs)
+        raise SystemExit(0)
+
+    with patch.object(delegate, "build_environment", fake_build_environment), patch.object(sys, "argv", argv):
+        with pytest.raises(SystemExit):
+            delegate.main()
+
+    assert captured["model"] == "openrouter/qwen/qwen3.8-flash"
+    assert captured["minion_config"] == "general/minion.yaml"
+    assert captured["cost_limit"] == 0.15
+
+
+def test_explicit_flags_override_a_preset(tmp_path):
+    """A --preset supplies defaults, not a lock: an explicit --model/--cost-limit for
+    that one field must still win, while an untouched field (--minion-config here) falls
+    through to the preset's value."""
+    spec_file = tmp_path / "spec.json"
+    spec_file.write_text(json.dumps(oneshot("locate something", read_paths=["/dev/null"])))
+    argv = [
+        "delegate",
+        "--session", str(tmp_path / "s1"),
+        "--spec", str(spec_file),
+        "--cwd", str(tmp_path),
+        "--preset", "qwen3.8-flash",
+        "--model", "openrouter/z-ai/glm-4.6",
+        "--cost-limit", "0.5",
+    ]
+    captured = {}
+
+    def fake_build_environment(**kwargs):
+        captured.update(kwargs)
+        raise SystemExit(0)
+
+    with patch.object(delegate, "build_environment", fake_build_environment), patch.object(sys, "argv", argv):
+        with pytest.raises(SystemExit):
+            delegate.main()
+
+    assert captured["model"] == "openrouter/z-ai/glm-4.6"
+    assert captured["cost_limit"] == 0.5
+    assert captured["minion_config"] == "general/minion.yaml"
+
+
+def test_unknown_preset_lists_whats_available(tmp_path, capsys):
+    argv = ["delegate", "--session", str(tmp_path / "s1"), "--preset", "not-a-real-preset"]
+    with patch.object(sys, "argv", argv), pytest.raises(SystemExit) as excinfo:
+        delegate.main()
+    assert excinfo.value.code == 2
+    err = capsys.readouterr().err
+    assert "not-a-real-preset" in err
+    assert "glm-4.5-air" in err and "qwen3.8-flash" in err, "must name what's actually available, not just say no"
+
+
+def test_list_presets_needs_no_session(capsys):
+    """A dev should be able to check what's available before starting any session."""
+    with patch.object(sys, "argv", ["delegate", "--list-presets"]):
+        delegate.main()
+    out = capsys.readouterr().out
+    assert "glm-4.5-air" in out
+    assert "qwen3.8-flash" in out
+    assert "n=1" in out, "the evidence must be labeled as thin, not presented as a settled benchmark"

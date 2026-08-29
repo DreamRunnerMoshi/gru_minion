@@ -61,6 +61,12 @@ Usage:
 
     python -m orchestrator.delegate --session .gru/s1 --summary   # what this session cost
 
+    # --preset picks a (model, minion-config, cost-limit) bundle with real evidence
+    # behind it — see orchestrator/config/presets.yaml. --list-presets shows the catalog
+    # without needing a --session.
+    python -m orchestrator.delegate --list-presets
+    python -m orchestrator.delegate --spec /tmp/d.json --session .gru/s1 --preset qwen3.8-flash
+
 Installed as a console script (see pyproject.toml), the same commands read:
 
     gru-delegate --spec /tmp/d.json --session .gru/s1
@@ -215,6 +221,42 @@ def build_environment(
     return env
 
 
+PRESETS_FILE = "presets.yaml"
+
+
+def _load_presets() -> dict:
+    """orchestrator/config/presets.yaml: named (model, minion_config, cost_limit) bundles,
+    each carrying the real evidence behind it — see that file's header. Keys starting with
+    `_` are metadata (a disclaimer, known risks), not presets."""
+    data = load_yaml(PRESETS_FILE) or {}
+    return {k: v for k, v in data.items() if not k.startswith("_")}
+
+
+def print_presets() -> None:
+    data = load_yaml(PRESETS_FILE) or {}
+    presets = {k: v for k, v in data.items() if not k.startswith("_")}
+    if disclaimer := data.get("_disclaimer"):
+        print(disclaimer.strip() + "\n")
+    if not presets:
+        print("no presets defined")
+        return
+    for name, p in presets.items():
+        print(name)
+        print(f"  model:         {p['model']}")
+        print(f"  minion-config: {p.get('minion_config', 'general/minion.yaml')}")
+        print(f"  cost-limit:    {p.get('cost_limit', 0.15)}")
+        ev = p.get("evidence") or {}
+        if ev:
+            print(f"  tested:        {ev.get('tested', '?')}  (n={ev.get('n', '?')})")
+            print(f"  task:          {ev.get('task', '?').strip()}")
+            print(f"  result:        {ev.get('result', '?').strip()}")
+            print(f"  cost:          {ev.get('cost', '?').strip()}")
+        print()
+    if risks := data.get("_known_risks"):
+        print("Known risks, independent of any preset above:")
+        print(risks.strip())
+
+
 def print_status(session: Path) -> None:
     """One condensed line per delegation, from the progress stream — safe to call while a
     delegation is still running, which is the point: it turns a black box into "ran 4
@@ -268,24 +310,38 @@ def print_summary(session: Path) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--session", required=True, type=Path, help="Session directory: holds delegation outputs, minion trajectories and the cost record. Reuse the same one across a working session so inputs.from can reference earlier delegations.")
+    parser.add_argument("--session", type=Path, help="Session directory: holds delegation outputs, minion trajectories and the cost record. Reuse the same one across a working session so inputs.from can reference earlier delegations. Not needed for --list-presets.")
     parser.add_argument("--spec", type=Path, help="JSON file holding one delegate_to_minion args object (same schema as the real tool — see orchestrator/gru/toolcall.py). Omit to read it from stdin.")
     parser.add_argument("--cwd", type=Path, default=Path.cwd(), help="Working directory the minion operates in (default: current directory)")
     # Defaults come from the environment so that a host which is not OpenRouter is
     # configured once, in a shell profile, instead of on every delegation. The skill's
     # command lines then stay provider-agnostic, which is the point: the same prompt has
     # to work for someone on OpenRouter and someone on a subscription gateway.
-    parser.add_argument("--model", default=os.environ.get("GRU_MINION_MODEL", "openrouter/z-ai/glm-4.5-air"), help="litellm model string for the minion (default: $GRU_MINION_MODEL, else openrouter/z-ai/glm-4.5-air)")
+    # --model/--minion-config/--cost-limit default to None here, not a literal value: a
+    # value given explicitly on the command line must beat a --preset, and there is no way
+    # to tell "the user passed the same value as the default" from "the user passed
+    # nothing" once argparse has already filled in a default. Resolution happens after
+    # parsing, once --preset (if any) has been loaded.
+    parser.add_argument("--model", default=None, help="litellm model string for the minion. Falls back to --preset, then $GRU_MINION_MODEL, then openrouter/z-ai/glm-4.5-air.")
+    parser.add_argument("--preset", default=None, help="Name from orchestrator/config/presets.yaml — a (model, minion-config, cost-limit) bundle with real evidence behind it. --list-presets shows the catalog. An explicit --model/--minion-config/--cost-limit still overrides the preset's value for that one field.")
     parser.add_argument("--api-base", default=os.environ.get("GRU_MINION_API_BASE"), help="Default: $GRU_MINION_API_BASE. Base URL of an OpenAI/Anthropic-compatible gateway, for a minion served somewhere litellm has no built-in route: a self-hosted endpoint, or a subscription gateway you already pay for (e.g. Alibaba Bailian's Token Plan). Omit for a hosted provider litellm routes by prefix, like openrouter/.")
     parser.add_argument("--api-key-env", metavar="VAR", default=os.environ.get("GRU_MINION_API_KEY_ENV"), help="Default: $GRU_MINION_API_KEY_ENV. Name of the environment variable holding the key for --api-base — the variable name, never the key itself. Deliberately not ANTHROPIC_API_KEY by default: an Anthropic-compatible gateway would otherwise need that variable exported, which also redirects Claude Code when Claude Code is the planner.")
-    parser.add_argument("--minion-config", default="general/minion.yaml", help="Minion config under orchestrator/config/. The default is the general-purpose one: real repository, no patch ritual, and forbidden from touching anything it did not create. The benchmark variants (swe_bench/minion.yaml, gaia/minion.yaml) exist to score instances and are not safe against a working tree you care about.")
-    parser.add_argument("--cost-limit", type=float, default=0.15, help="Hard dollar cap on this one delegation's agentic session (0 leaves the config's own)")
+    parser.add_argument("--minion-config", default=None, help="Minion config under orchestrator/config/. Falls back to --preset, then general/minion.yaml: real repository, no patch ritual, forbidden from touching anything it did not create. The benchmark variants (swe_bench/minion.yaml, gaia/minion.yaml) exist to score instances and are not safe against a working tree you care about.")
+    parser.add_argument("--cost-limit", type=float, default=None, help="Hard dollar cap on this one delegation's agentic session (0 leaves the config's own). Falls back to --preset, then 0.15.")
     parser.add_argument("--quiet", action="store_true", help="Suppress the live per-command progress lines on stderr. <session>/progress.jsonl is written either way.")
     parser.add_argument("--status", action="store_true", help="Print a condensed one-line status per delegation from the progress stream, and exit. Works while a delegation is still running.")
     parser.add_argument("--summary", action="store_true", help="Print what this session's delegations have cost so far, and exit")
+    parser.add_argument("--list-presets", action="store_true", help="Print the preset catalog — model, minion-config, cost-limit, and the evidence behind each — and exit.")
     parser.add_argument("--benchmark-minion-config", action="store_true", help="Permit a --minion-config outside general/. The benchmark configs instruct the minion to revert changes unrelated to its own task, which is correct in a throwaway scoring container and destructive against a working tree you care about. Only the benchmark harness should pass this.")
     parser.add_argument("--allow-dirty", action="store_true", help="Permit a verdict delegation against a working tree with uncommitted changes. Refused by default — a verdict-mode minion is instructed to revert changes unrelated to its own work, which in a shared tree means yours. See this module's docstring.")
     args = parser.parse_args()
+
+    if args.list_presets:
+        print_presets()
+        return
+
+    if not args.session:
+        parser.error("--session is required (except for --list-presets)")
 
     if args.status:
         print_status(args.session)
@@ -294,6 +350,19 @@ def main() -> None:
     if args.summary:
         print_summary(args.session)
         return
+
+    preset = {}
+    if args.preset:
+        presets = _load_presets()
+        if args.preset not in presets:
+            available = ", ".join(sorted(presets)) or "(none defined)"
+            parser.error(f"unknown --preset {args.preset!r}. Available: {available}. See --list-presets for the evidence behind each.")
+        preset = presets[args.preset]
+
+    # Explicit flag beats preset beats environment beats built-in fallback.
+    args.model = args.model or preset.get("model") or os.environ.get("GRU_MINION_MODEL", "openrouter/z-ai/glm-4.5-air")
+    args.minion_config = args.minion_config or preset.get("minion_config") or "general/minion.yaml"
+    args.cost_limit = args.cost_limit if args.cost_limit is not None else preset.get("cost_limit", 0.15)
 
     raw = (args.spec.read_text() if args.spec else sys.stdin.read()).strip()
     if not raw:
