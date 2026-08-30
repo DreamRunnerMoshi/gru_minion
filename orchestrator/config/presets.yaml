@@ -7,6 +7,11 @@
 #
 # Loaded by orchestrator/delegate.py via `--preset NAME`; `--list-presets` prints this
 # file including the evidence fields. A key starting with `_` is metadata, not a preset.
+#
+# glm-4.5-air was dropped from this catalog on 2026-08-29 after glm-5.3-flash — same
+# vendor, newer model — matched it on cost order of magnitude while actually getting the
+# one thing glm-4.5-air got wrong (see glm-5.3-flash's evidence below). Its run is not
+# lost: .gru/envscan/ still holds that session if it's ever needed for reference.
 
 _disclaimer: >
   n=1 per entry unless stated otherwise. Every number here came from a live run recorded
@@ -20,24 +25,6 @@ _known_risks: >
   attributable to one model in that data, but a reminder to check exit_status per
   delegation rather than trusting that output came back means it finished cleanly.
 
-glm-4.5-air:
-  model: openrouter/z-ai/glm-4.5-air
-  minion_config: general/minion.yaml
-  cost_limit: 0.15
-  evidence:
-    tested: "2026-08-28"
-    n: 1
-    task: >
-      Locate — grep-shaped search for every environment-variable read under
-      orchestrator/*.py, findings/agentic. Session .gru/envscan.
-    result: >
-      File/line/variable-name columns all correct (8/8). The free-text "how it is read"
-      column was wrong on 6 of 8 rows — reported os.getenv where the source used
-      os.environ.get/.setdefault, an API that appears zero times in the tree. Retrieved
-      detail was exact; the derived claim built on top of it was not — verify derived
-      columns, don't just spot-check the located facts.
-    cost: "8 shell commands, 9 model calls, 28,270 tokens, 36.1s, exit_status Submitted"
-
 qwen3.8-flash:
   model: openrouter/qwen/qwen3.8-flash
   minion_config: general/minion.yaml
@@ -46,13 +33,36 @@ qwen3.8-flash:
     tested: "2026-08-28"
     n: 1
     task: >
-      Identical spec to glm-4.5-air's entry above, same repo, same session shape.
-      Session .gru/envscan-qwen.
+      Locate — grep-shaped search for every environment-variable read under
+      orchestrator/*.py, findings/agentic. Session .gru/envscan-qwen.
     result: >
-      All 8 rows correct, including the derived column glm-4.5-air got wrong. Also
-      noticed and flagged, unprompted, that a stale findings.md left over from the
-      glm-4.5-air run made the same wrong os.getenv claim.
+      All 8 rows correct: file, line, variable name, and the free-text "how it is read"
+      column. Also noticed and flagged, unprompted, that a stale findings.md left over
+      from an earlier run on a different model made a wrong os.getenv claim on that same
+      column.
     cost: >
       19 shell commands (1 harmless — a `cat` on a not-yet-created file), 12 model
-      calls, 132,732 tokens, 113.3s, exit_status Submitted — roughly 4.7x the tokens
-      and 3x the wall time of glm-4.5-air on the same task.
+      calls, 132,732 tokens, 113.3s, exit_status Submitted.
+
+glm-5.3-flash:
+  model: openrouter/z-ai/glm-5.3-flash
+  minion_config: general/minion.yaml
+  cost_limit: 0.15
+  evidence:
+    tested: "2026-08-29"
+    n: 1
+    task: >
+      Identical spec to qwen3.8-flash's entry above, same repo, same session shape.
+      Session .gru/envscan-glm53.
+    result: >
+      All 8 rows correct, including the "how it is read" column — the exact thing an
+      earlier glm-4.5-air run on this same task got wrong on 6 of 8 rows (reported
+      os.getenv where the source used os.environ.get/.setdefault, an API that appears
+      zero times in the tree). Also correctly identified and excluded a decoy that
+      didn't exist for the earlier two runs: this file's own prose mentions
+      os.getenv/os.environ.get in evidence text, and the minion explicitly checked that
+      was YAML commentary, not Python source, before excluding it.
+    cost: >
+      13 shell commands (1 harmless), 10 model calls, 73,305 tokens, 90.1s, exit_status
+      Submitted — about 55% of qwen3.8-flash's tokens and 80% of its wall time for the
+      same correctness on this task.

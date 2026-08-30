@@ -356,7 +356,7 @@ def test_unknown_preset_lists_whats_available(tmp_path, capsys):
     assert excinfo.value.code == 2
     err = capsys.readouterr().err
     assert "not-a-real-preset" in err
-    assert "glm-4.5-air" in err and "qwen3.8-flash" in err, "must name what's actually available, not just say no"
+    assert "glm-5.3-flash" in err and "qwen3.8-flash" in err, "must name what's actually available, not just say no"
 
 
 def test_list_presets_needs_no_session(capsys):
@@ -364,6 +364,6 @@ def test_list_presets_needs_no_session(capsys):
     with patch.object(sys, "argv", ["delegate", "--list-presets"]):
         delegate.main()
     out = capsys.readouterr().out
-    assert "glm-4.5-air" in out
+    assert "glm-5.3-flash" in out
     assert "qwen3.8-flash" in out
     assert "n=1" in out, "the evidence must be labeled as thin, not presented as a settled benchmark"
