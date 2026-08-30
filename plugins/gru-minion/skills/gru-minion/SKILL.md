@@ -38,7 +38,7 @@ if [ -n "$GRU_MINION_API_BASE" ]; then
     && echo "minion: ${GRU_MINION_MODEL:-unset} via $GRU_MINION_API_BASE" \
     || echo "gateway set but \$$GRU_MINION_API_KEY_ENV is empty"
 else
-  [ -n "$OPENROUTER_API_KEY" ] && echo "minion: ${GRU_MINION_MODEL:-openrouter/z-ai/glm-4.5-air}" \
+  [ -n "$OPENROUTER_API_KEY" ] && echo "minion: ${GRU_MINION_MODEL:-openrouter/z-ai/glm-5.3-flash}" \
     || echo "no minion configured"
 fi
 git status --porcelain

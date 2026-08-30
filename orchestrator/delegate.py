@@ -322,7 +322,7 @@ def main() -> None:
     # to tell "the user passed the same value as the default" from "the user passed
     # nothing" once argparse has already filled in a default. Resolution happens after
     # parsing, once --preset (if any) has been loaded.
-    parser.add_argument("--model", default=None, help="litellm model string for the minion. Falls back to --preset, then $GRU_MINION_MODEL, then openrouter/z-ai/glm-4.5-air.")
+    parser.add_argument("--model", default=None, help="litellm model string for the minion. Falls back to --preset, then $GRU_MINION_MODEL, then openrouter/z-ai/glm-5.3-flash.")
     parser.add_argument("--preset", default=None, help="Name from orchestrator/config/presets.yaml — a (model, minion-config, cost-limit) bundle with real evidence behind it. --list-presets shows the catalog. An explicit --model/--minion-config/--cost-limit still overrides the preset's value for that one field.")
     parser.add_argument("--api-base", default=os.environ.get("GRU_MINION_API_BASE"), help="Default: $GRU_MINION_API_BASE. Base URL of an OpenAI/Anthropic-compatible gateway, for a minion served somewhere litellm has no built-in route: a self-hosted endpoint, or a subscription gateway you already pay for (e.g. Alibaba Bailian's Token Plan). Omit for a hosted provider litellm routes by prefix, like openrouter/.")
     parser.add_argument("--api-key-env", metavar="VAR", default=os.environ.get("GRU_MINION_API_KEY_ENV"), help="Default: $GRU_MINION_API_KEY_ENV. Name of the environment variable holding the key for --api-base — the variable name, never the key itself. Deliberately not ANTHROPIC_API_KEY by default: an Anthropic-compatible gateway would otherwise need that variable exported, which also redirects Claude Code when Claude Code is the planner.")
@@ -360,7 +360,7 @@ def main() -> None:
         preset = presets[args.preset]
 
     # Explicit flag beats preset beats environment beats built-in fallback.
-    args.model = args.model or preset.get("model") or os.environ.get("GRU_MINION_MODEL", "openrouter/z-ai/glm-4.5-air")
+    args.model = args.model or preset.get("model") or os.environ.get("GRU_MINION_MODEL", "openrouter/z-ai/glm-5.3-flash")
     args.minion_config = args.minion_config or preset.get("minion_config") or "general/minion.yaml"
     args.cost_limit = args.cost_limit if args.cost_limit is not None else preset.get("cost_limit", 0.15)
 
