@@ -4,7 +4,7 @@ description: "Work a coding task as Gru: you own the outcome, and a much cheaper
 
 argument-hint: [what you want built or changed]
 
-allowed-tools: [Read, Write, Edit, Glob, Grep, Bash]
+allowed-tools: [Read, Write, Edit, Glob, Grep, Bash, Agent]
 ---
 
 # Gru / minion
@@ -27,9 +27,28 @@ Separately, and not a judgement call: don't hand over credentials, deletions, or
 
 Write each spec only when the previous result is in. A delegation routinely returns something that changes what the next one should be — a file that doesn't exist, a pattern with three variants, a test already covering the case.
 
+## Native delegation — no setup
+
+The `Agent` tool spawns a subagent inside this same Claude Code session, on whatever model you name, with no CLI to install and no API key to configure. This is the path to reach for first.
+
+```
+Agent({
+  subagent_type: "general-purpose",
+  model: "haiku",
+  description: "short label",
+  prompt: "The task, its scope/boundary, and exactly what to report back — write these in prose. There is no JSON spec file for this path."
+})
+```
+
+The one comparison run so far — an env-var-scan task identical to one of `presets.yaml`'s gru-delegate entries — got 8/8 correct using a third of the tool calls and roughly a quarter of the tokens the same model (`claude-haiku-4.5`) used through the gru-delegate/OpenRouter path on the same task, where it hit its cost cap without submitting. See `orchestrator/config/presets.yaml`'s `_native_task_delegation` entry for the numbers. That is one comparison, not a settled verdict — treat it as a starting point.
+
+Two things this path does not give you, unlike `gru-delegate` below: no independent re-run of a `verification.checks` list — the subagent's returned text is trusted unless you verify it yourself (## Verifying, further down, still applies in full — nothing here enforces it for you) — and no dollar cost, only the token count, tool-call count, and duration Claude Code reports when the subagent finishes.
+
+Reach for `gru-delegate` instead when you want a specific non-Claude model (GLM, Qwen, DeepSeek, ...), a PASS/FAIL verdict computed by independently re-running checks, or a per-delegation dollar figure to report.
+
 ## Preflight
 
-Once, at the start:
+The rest of this page, through `## Cost`, describes the `gru-delegate` path — skip it if native delegation above is all you need. Once, at the start of a `gru-delegate` session:
 
 ```bash
 gru-delegate --help >/dev/null 2>&1 || echo "gru-delegate not installed"

@@ -70,9 +70,7 @@ model-provider routing.
 ## Use it in Claude Code
 
 The architecture is packaged as a Claude Code plugin, so you can be Gru yourself: you
-plan and verify, a cheap model does the volume. This is the same code the experiments
-run — a delegation issued from your editor goes through the same environment, the same
-minion runner, and the same independent check re-runs.
+plan and verify, a cheap model does the volume.
 
 ```
 /plugin marketplace add DreamRunnerMoshi/gru_minion
@@ -80,7 +78,18 @@ minion runner, and the same independent check re-runs.
 /gru-minion
 ```
 
-Needs an `OPENROUTER_API_KEY`. The executor runs through `uvx` with no install step:
+**That's it — no API key, no install step.** The skill's default path delegates through
+Claude Code's own `Agent` tool to a cheaper model (`haiku`) in the same session. In the
+one head-to-head run so far, that path used a third of the tool calls and about a
+quarter of the tokens of the alternative below, on an identical task, and got every row
+right where the alternative hit its cost cap without finishing (numbers in
+`orchestrator/config/presets.yaml`'s `_native_task_delegation` entry — one comparison,
+not a settled verdict).
+
+For a specific non-Claude minion (GLM, Qwen, DeepSeek, ...), a PASS/FAIL verdict computed
+by independently re-running checks, or a per-delegation dollar figure — the setup this
+project's own experiments run on — the plugin also drives `gru-delegate`, which needs an
+`OPENROUTER_API_KEY` and runs through `uvx` with no install step:
 
 ```bash
 uvx --from "git+https://github.com/DreamRunnerMoshi/gru_minion@v0.1.0" gru-delegate --help
@@ -90,8 +99,8 @@ Or install it properly — `pip install git+https://github.com/DreamRunnerMoshi/
 — which puts `gru-delegate` (one delegation) and `gru-session` (a whole benchmark
 instance, with the `[benchmarks]` extra) on your PATH.
 
-A delegation is a JSON spec validated against the real tool schema, and you get back
-either findings or a PASS/FAIL computed by re-running your own checks:
+A `gru-delegate` delegation is a JSON spec validated against the real tool schema, and
+you get back either findings or a PASS/FAIL computed by re-running your own checks:
 
 ```bash
 gru-delegate --spec task.json --session .gru/s1
