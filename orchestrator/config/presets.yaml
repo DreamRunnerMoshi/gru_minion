@@ -25,6 +25,36 @@ _known_risks: >
   attributable to one model in that data, but a reminder to check exit_status per
   delegation rather than trusting that output came back means it finished cleanly.
 
+_native_task_delegation: >
+  Not a preset — no `model`/`minion_config`/`cost_limit` here, and nothing loadable via
+  --preset, because this path never goes through gru-delegate at all. Recorded here only
+  because it changes what "minion" should mean for a Claude-Code-hosted Gru, and this file
+  is where that evidence lives.
+
+  Finding (tested 2026-09-01, n=1, no .gru/ session — this bypassed gru-delegate entirely):
+  the identical env-var-scan task (see qwen3.8-flash's entry above) run against
+  claude-haiku-4.5 two different ways —
+
+  - Via gru-delegate --model openrouter/anthropic/claude-haiku-4.5 (mini-swe-agent's
+    bash-only agentic loop, resending full history every turn): 26 model calls, 146,642
+    tokens, 41.8s, LimitsExceeded — never reached Submit despite having already written a
+    correct findings.md at call 22, because it kept re-running redundant greps instead of
+    submitting, and the $0.15 cost cap tripped first.
+  - Via Claude Code's native Agent tool (model: "haiku", no gru-delegate, no OpenRouter,
+    no separate API key — same Claude Code session Gru itself runs in): 7 tool calls,
+    40,923 tokens, 36.7s, 8/8 rows correct including the `dynamic` case.
+
+  Same underlying model, ~3.6x fewer tokens, under a third of the calls, and a clean
+  result instead of a budget-exceeding failure — most likely because native Grep/Read/Glob
+  return pre-filtered results, where the OpenRouter path forces the same work through raw
+  shell commands (cat/sed/grep) re-sent in full on every agentic turn.
+
+  What this does NOT give you, unlike gru-delegate: no independent re-run of
+  verification.checks (a Task-tool subagent's result is trusted unless Gru itself chooses
+  to verify it — the discipline in SKILL.md's "Verifying" section still applies, just
+  without the CLI enforcing anything), and no dollar cost — only tokens, tool-call count,
+  and duration, reported in the subagent's completion notification.
+
 qwen3.8-flash:
   model: openrouter/qwen/qwen3.8-flash
   minion_config: general/minion.yaml
