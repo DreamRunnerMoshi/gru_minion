@@ -134,7 +134,7 @@ class GruEnvironment:
 
     def execute(self, action: dict, cwd: str = "", *, timeout: int | None = None) -> dict[str, Any]:
         kind = action.get("kind")
-        self.gru_action_log.append({"kind": kind, "args": action.get("args", {})})
+        self.gru_action_log.append({"kind": kind, "args": action.get("args", {}), **self._turn_usage()})
         if kind == "delegate_to_minion":
             return self._delegate(action["args"])
         if kind == "think":
@@ -165,14 +165,22 @@ class GruEnvironment:
             last_stdout = out["output"].strip()
         return CheckResult(all_passed, "\n\n".join(outputs), last_stdout)
 
+    def _turn_usage(self) -> dict[str, Any]:
+        """Token count and, when the provider reports one (orchestrator/metrics/real_cost.py),
+        real dollar cost of the Gru turn that just produced the current action. Recorded the
+        same way for every action kind so gru_action_log can be broken down by kind afterward
+        — how much of Gru's spend was issuing delegations vs. running checks vs. deciding —
+        instead of only the one lump `agent.cost` total."""
+        if self.gru_agent is None or not self.gru_agent.messages:
+            return {"tokens": None, "cost": None}
+        usage = (self.gru_agent.messages[-1].get("extra", {}).get("response", {}) or {}).get("usage") or {}
+        return {"tokens": usage.get("total_tokens"), "cost": usage.get("cost")}
+
     def _turn_cost_line(self) -> str:
         """Token cost of the Gru turn that just produced this action, so a self-directed
         run_check/think turn is priced too — not just delegations (gru.yaml: "you will be
         told what each delegation cost... and also what your own turn just cost")."""
-        if self.gru_agent is None or not self.gru_agent.messages:
-            return ""
-        usage = (self.gru_agent.messages[-1].get("extra", {}).get("response", {}) or {}).get("usage") or {}
-        total = usage.get("total_tokens")
+        total = self._turn_usage()["tokens"]
         return f" [this turn cost: {total:,} tokens]" if total is not None else ""
 
     # -- non-delegating actions --
@@ -229,6 +237,15 @@ class GruEnvironment:
 
         result = self.minions.run(args, material, delegation_id)
 
+        # For a verdict delegation, this is the moment of truth: independently re-run the
+        # checks it named, before anything else, so the record we're about to write down
+        # carries the real outcome — not just something formatted into the observation text
+        # and then lost. `checks` stays None for findings: there's nothing independently
+        # checkable about a findings delegation, and storing a fabricated True/False would
+        # misreport that as measured when it isn't (see ## Verifying in the plugin skill —
+        # findings-mode wrongness is only knowable by manual re-derivation, not a check).
+        checks = self._run_checks(args["verification"]["checks"]) if returns == "verdict" else None
+
         # Persist the delegation's actual output. It was previously in-memory only
         # (self.delegation_outputs), which made post-hoc localization-coverage scoring
         # impossible — the thing that lets 5 instances yield ~30 observations instead
@@ -252,6 +269,11 @@ class GruEnvironment:
                 "trajectory_path": result.trajectory_path or None,
                 "output_path": str(output_path) if output_path else None,
                 "cache": result.cache,
+                # None for findings (nothing independently checkable, see above); for
+                # verdict, whether Gru's own re-run of verification.checks passed — the one
+                # place a minion's wrongness is mechanically measurable across a whole run,
+                # rather than needing a by-hand read of every summary.
+                "checks_passed": checks.passed if checks is not None else None,
             }
         )
 
@@ -264,7 +286,6 @@ class GruEnvironment:
         self.delegation_outputs[delegation_id] = result.submission  # kept for a later inputs.from
 
         if returns == "verdict":
-            checks = self._run_checks(args["verification"]["checks"])
             summary, _ = split_verdict_submission(result.submission)
             status = "PASS" if checks.passed else "FAIL"
             observation = (

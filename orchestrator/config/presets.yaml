@@ -1,0 +1,98 @@
+# Minion presets: named (model, minion-config, cost-limit) bundles, each carrying the
+# real evidence behind it. This is a running log of what has actually been tried against
+# this project's own repository — not a benchmark suite, and not a claim about which
+# model is "best" for a kind of task. Most entries have n=1: one task, one run. Read the
+# evidence before trusting a preset on a task unlike the one it was tested on, and treat
+# a preset as a documented starting point to compare against, not a verdict.
+#
+# Loaded by orchestrator/delegate.py via `--preset NAME`; `--list-presets` prints this
+# file including the evidence fields. A key starting with `_` is metadata, not a preset.
+#
+# glm-4.5-air was dropped from this catalog on 2026-08-29 after glm-5.3-flash — same
+# vendor, newer model — matched it on cost order of magnitude while actually getting the
+# one thing glm-4.5-air got wrong (see glm-5.3-flash's evidence below). Its run is not
+# lost: .gru/envscan/ still holds that session if it's ever needed for reference.
+
+_disclaimer: >
+  n=1 per entry unless stated otherwise. Every number here came from a live run recorded
+  under this project's own .gru/ sessions — see `tested`/`task` for exactly which one.
+  Nothing here is extrapolated to task shapes that weren't run.
+
+_known_risks: >
+  Independent of any specific preset: exp5 (experiments/exp5/NOTES.md, Drafting_Email.md)
+  found 15 of 24 real delegations hitting the minion's own turn-budget cap
+  (LimitsExceeded) without completing, on tasks that were often single-line edits — not
+  attributable to one model in that data, but a reminder to check exit_status per
+  delegation rather than trusting that output came back means it finished cleanly.
+
+_native_task_delegation: >
+  Not a preset — no `model`/`minion_config`/`cost_limit` here, and nothing loadable via
+  --preset, because this path never goes through gru-delegate at all. Recorded here only
+  because it changes what "minion" should mean for a Claude-Code-hosted Gru, and this file
+  is where that evidence lives.
+
+  Finding (tested 2026-09-01, n=1, no .gru/ session — this bypassed gru-delegate entirely):
+  the identical env-var-scan task (see qwen3.8-flash's entry above) run against
+  claude-haiku-4.5 two different ways —
+
+  - Via gru-delegate --model openrouter/anthropic/claude-haiku-4.5 (mini-swe-agent's
+    bash-only agentic loop, resending full history every turn): 26 model calls, 146,642
+    tokens, 41.8s, LimitsExceeded — never reached Submit despite having already written a
+    correct findings.md at call 22, because it kept re-running redundant greps instead of
+    submitting, and the $0.15 cost cap tripped first.
+  - Via Claude Code's native Agent tool (model: "haiku", no gru-delegate, no OpenRouter,
+    no separate API key — same Claude Code session Gru itself runs in): 7 tool calls,
+    40,923 tokens, 36.7s, 8/8 rows correct including the `dynamic` case.
+
+  Same underlying model, ~3.6x fewer tokens, under a third of the calls, and a clean
+  result instead of a budget-exceeding failure — most likely because native Grep/Read/Glob
+  return pre-filtered results, where the OpenRouter path forces the same work through raw
+  shell commands (cat/sed/grep) re-sent in full on every agentic turn.
+
+  What this does NOT give you, unlike gru-delegate: no independent re-run of
+  verification.checks (a Task-tool subagent's result is trusted unless Gru itself chooses
+  to verify it — the discipline in SKILL.md's "Verifying" section still applies, just
+  without the CLI enforcing anything), and no dollar cost — only tokens, tool-call count,
+  and duration, reported in the subagent's completion notification.
+
+qwen3.8-flash:
+  model: openrouter/qwen/qwen3.8-flash
+  minion_config: general/minion.yaml
+  cost_limit: 0.15
+  evidence:
+    tested: "2026-08-28"
+    n: 1
+    task: >
+      Locate — grep-shaped search for every environment-variable read under
+      orchestrator/*.py, findings/agentic. Session .gru/envscan-qwen.
+    result: >
+      All 8 rows correct: file, line, variable name, and the free-text "how it is read"
+      column. Also noticed and flagged, unprompted, that a stale findings.md left over
+      from an earlier run on a different model made a wrong os.getenv claim on that same
+      column.
+    cost: >
+      19 shell commands (1 harmless — a `cat` on a not-yet-created file), 12 model
+      calls, 132,732 tokens, 113.3s, exit_status Submitted.
+
+glm-5.3-flash:
+  model: openrouter/z-ai/glm-5.3-flash
+  minion_config: general/minion.yaml
+  cost_limit: 0.15
+  evidence:
+    tested: "2026-08-29"
+    n: 1
+    task: >
+      Identical spec to qwen3.8-flash's entry above, same repo, same session shape.
+      Session .gru/envscan-glm53.
+    result: >
+      All 8 rows correct, including the "how it is read" column — the exact thing an
+      earlier glm-4.5-air run on this same task got wrong on 6 of 8 rows (reported
+      os.getenv where the source used os.environ.get/.setdefault, an API that appears
+      zero times in the tree). Also correctly identified and excluded a decoy that
+      didn't exist for the earlier two runs: this file's own prose mentions
+      os.getenv/os.environ.get in evidence text, and the minion explicitly checked that
+      was YAML commentary, not Python source, before excluding it.
+    cost: >
+      13 shell commands (1 harmless), 10 model calls, 73,305 tokens, 90.1s, exit_status
+      Submitted — about 55% of qwen3.8-flash's tokens and 80% of its wall time for the
+      same correctness on this task.

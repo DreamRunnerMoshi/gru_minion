@@ -212,3 +212,158 @@ def test_benchmark_minion_configs_are_refused_by_default(tmp_path):
     # the escape hatch exists for the benchmark harness, and works
     invoke("--minion-config", "swe_bench/minion.yaml", "--benchmark-minion-config")
     assert llm.calls, "--benchmark-minion-config must permit it"
+
+
+def _progress(session: Path, *events: dict) -> None:
+    session.mkdir(parents=True, exist_ok=True)
+    with (session / "progress.jsonl").open("w") as fh:
+        for i, e in enumerate(events):
+            fh.write(json.dumps({"t": 1000.0 + i, **e}) + "\n")
+
+
+def test_status_condenses_a_finished_delegation(tmp_path, capsys):
+    """The point of the progress stream: a delegation is otherwise a black box for
+    minutes. Gru reports this line, not the raw event stream."""
+    session = tmp_path / "s"
+    _progress(
+        session,
+        {"event": "start", "delegation_id": "t1", "mode": "agentic", "returns": "findings", "description": "x"},
+        {"event": "command", "delegation_id": "t1", "n": 1, "command": "ls", "returncode": 0, "output_bytes": 10},
+        {"event": "command", "delegation_id": "t1", "n": 2, "command": "grep x", "returncode": 1, "output_bytes": 0},
+        {"event": "done", "delegation_id": "t1", "exit_status": "Submitted", "api_calls": 3,
+         "total_tokens": 7295, "elapsed": 12.7},
+    )
+    delegate.print_status(session)
+    out = capsys.readouterr().out
+    assert "ran 2 shell commands (1 failed)" in out
+    assert "Submitted" in out and "7,295 tokens" in out
+
+
+def test_status_works_while_a_delegation_is_still_running(tmp_path, capsys):
+    """Mid-flight is the case that matters — a completed delegation could just be read
+    from its result. There is no `done` event yet, so the line must still render."""
+    session = tmp_path / "s"
+    _progress(
+        session,
+        {"event": "start", "delegation_id": "t1", "mode": "agentic", "returns": "verdict", "description": "x"},
+        {"event": "command", "delegation_id": "t1", "n": 1, "command": "pytest", "returncode": 0, "output_bytes": 5},
+    )
+    delegate.print_status(session)
+    out = capsys.readouterr().out
+    assert "running" in out
+    assert "ran 1 shell command" in out and "commands" not in out, "singular for one command"
+
+
+def test_progress_is_written_for_a_real_delegation(tmp_path):
+    """The writer is wired into the runner, not merely defined."""
+    run_delegation(tmp_path, oneshot("do a thing", read_paths=["/dev/null"]), _canned("done"))
+    events = [json.loads(l) for l in (tmp_path / "s1" / "progress.jsonl").read_text().splitlines() if l.strip()]
+    kinds = [e["event"] for e in events]
+    assert kinds == ["start", "done"], "a oneshot runs no shell commands, so start and done only"
+    assert events[-1]["total_tokens"] == 110
+
+
+def test_ritual_artifacts_are_cleaned_up_but_pre_existing_ones_are_left(tmp_path):
+    """The submission ritual makes the minion write summary.md/findings.md into the
+    working directory. Their contents already reached us through the submission, so in a
+    real repository they are litter — and they defeat the "no new untracked files" check
+    that catches a minion leaving other junk behind. But a file the operator already had
+    is theirs, not ours."""
+    from orchestrator.minion.runner import RITUAL_ARTIFACTS, MinionRunner
+
+    work = tmp_path / "w"
+    work.mkdir()
+    (work / "summary.md").write_text("MINE — pre-existing, must survive")
+    (work / "findings.md").write_text("created by the delegation")
+
+    class _Env:
+        cwd = str(work)
+
+    runner = MinionRunner(
+        env=_Env(), model_kwargs={}, agent_kwargs={},
+        system_template="", instance_template="",
+    )
+    removed = runner._cleanup_ritual_artifacts(pre_existing={"summary.md"})
+
+    assert removed == ["findings.md"]
+    assert (work / "summary.md").read_text() == "MINE — pre-existing, must survive"
+    assert not (work / "findings.md").exists()
+    assert "patch.txt" in RITUAL_ARTIFACTS, "the benchmark ritual's artifact is covered too"
+
+
+def test_preset_supplies_model_cost_limit_and_minion_config(tmp_path):
+    """--preset resolves to the (model, minion_config, cost_limit) recorded in
+    orchestrator/config/presets.yaml, so a dev can point at a benchmarked bundle by name
+    instead of copying flags by hand."""
+    spec_file = tmp_path / "spec.json"
+    spec_file.write_text(json.dumps(oneshot("locate something", read_paths=["/dev/null"])))
+    argv = [
+        "delegate",
+        "--session", str(tmp_path / "s1"),
+        "--spec", str(spec_file),
+        "--cwd", str(tmp_path),
+        "--preset", "qwen3.8-flash",
+    ]
+    captured = {}
+
+    def fake_build_environment(**kwargs):
+        captured.update(kwargs)
+        raise SystemExit(0)
+
+    with patch.object(delegate, "build_environment", fake_build_environment), patch.object(sys, "argv", argv):
+        with pytest.raises(SystemExit):
+            delegate.main()
+
+    assert captured["model"] == "openrouter/qwen/qwen3.8-flash"
+    assert captured["minion_config"] == "general/minion.yaml"
+    assert captured["cost_limit"] == 0.15
+
+
+def test_explicit_flags_override_a_preset(tmp_path):
+    """A --preset supplies defaults, not a lock: an explicit --model/--cost-limit for
+    that one field must still win, while an untouched field (--minion-config here) falls
+    through to the preset's value."""
+    spec_file = tmp_path / "spec.json"
+    spec_file.write_text(json.dumps(oneshot("locate something", read_paths=["/dev/null"])))
+    argv = [
+        "delegate",
+        "--session", str(tmp_path / "s1"),
+        "--spec", str(spec_file),
+        "--cwd", str(tmp_path),
+        "--preset", "qwen3.8-flash",
+        "--model", "openrouter/z-ai/glm-4.6",
+        "--cost-limit", "0.5",
+    ]
+    captured = {}
+
+    def fake_build_environment(**kwargs):
+        captured.update(kwargs)
+        raise SystemExit(0)
+
+    with patch.object(delegate, "build_environment", fake_build_environment), patch.object(sys, "argv", argv):
+        with pytest.raises(SystemExit):
+            delegate.main()
+
+    assert captured["model"] == "openrouter/z-ai/glm-4.6"
+    assert captured["cost_limit"] == 0.5
+    assert captured["minion_config"] == "general/minion.yaml"
+
+
+def test_unknown_preset_lists_whats_available(tmp_path, capsys):
+    argv = ["delegate", "--session", str(tmp_path / "s1"), "--preset", "not-a-real-preset"]
+    with patch.object(sys, "argv", argv), pytest.raises(SystemExit) as excinfo:
+        delegate.main()
+    assert excinfo.value.code == 2
+    err = capsys.readouterr().err
+    assert "not-a-real-preset" in err
+    assert "glm-5.3-flash" in err and "qwen3.8-flash" in err, "must name what's actually available, not just say no"
+
+
+def test_list_presets_needs_no_session(capsys):
+    """A dev should be able to check what's available before starting any session."""
+    with patch.object(sys, "argv", ["delegate", "--list-presets"]):
+        delegate.main()
+    out = capsys.readouterr().out
+    assert "glm-5.3-flash" in out
+    assert "qwen3.8-flash" in out
+    assert "n=1" in out, "the evidence must be labeled as thin, not presented as a settled benchmark"

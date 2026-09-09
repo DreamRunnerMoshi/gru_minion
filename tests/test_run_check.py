@@ -81,3 +81,24 @@ def test_run_check_executes_read_only_commands(tmp_path):
         str(m["content"]) for m in session.gru_agent.messages if isinstance(m.get("content"), str) and "Checks:" in m["content"]
     )
     assert "Checks: PASS" in check_output
+
+
+def test_gru_action_log_prices_each_action_by_kind(tmp_path):
+    """gru_action_log used to store only {kind, args} — no way to tell how much of Gru's
+    spend went to running checks versus deciding to finish, only the one lump agent.cost
+    total. Every entry now carries the token cost of the Gru turn that produced it, so a
+    report can sum by kind (e.g. verification = run_check + finish) instead."""
+    steps = [
+        Tool("run_check", {"checks": ["grep -c needle README.md"]}),
+        _finish(),
+    ]
+    session = run_session(tmp_path=tmp_path, steps=steps, repo_files={"README.md": "needle\nneedle\n"})
+
+    kinds = [a["kind"] for a in session.gru_env.gru_action_log]
+    assert kinds == ["run_check", "finish"]
+    for action in session.gru_env.gru_action_log:
+        assert isinstance(action["tokens"], int) and action["tokens"] > 0
+        # The scripted mock model reports plain litellm usage with no provider-side cost
+        # field (real_cost.py's real_completion_cost) — None here is correct, not a bug;
+        # an OpenRouter-routed real run has this populated instead.
+        assert action["cost"] is None

@@ -45,6 +45,7 @@ def test_agentic_verdict_delegation_runs_for_real_and_gru_reverifies(tmp_path):
     [record] = session.gru_env.minion_records
     assert record["returns"] == "verdict"
     assert record["mode"] == "agentic"
+    assert record["checks_passed"] is True
 
 
 def test_verdict_delegation_shows_gru_the_summary_but_not_the_raw_patch(tmp_path):
@@ -178,6 +179,10 @@ def test_agentic_delegation_that_fails_its_check_is_routine_not_fatal(tmp_path):
     assert session.result["exit_status"] == "Submitted"
     assert len(session.gru_env.minion_records) == 2
     assert session.gru_env.minion_records[0]["returns"] == "verdict"
+    # The failed attempt and the corrected retry must be distinguishable after the fact —
+    # this is the field a report computes "how often was the minion wrong" from.
+    assert session.gru_env.minion_records[0]["checks_passed"] is False
+    assert session.gru_env.minion_records[1]["checks_passed"] is True
 
 
 def test_oneshot_findings_delegation_makes_one_call_with_the_requested_material(tmp_path):
@@ -205,6 +210,7 @@ def test_oneshot_findings_delegation_makes_one_call_with_the_requested_material(
     [record] = session.gru_env.minion_records
     assert record["mode"] == "oneshot"
     assert record["api_calls"] == 1
+    assert record["checks_passed"] is None  # findings has nothing independently checkable
     assert session.gru_env.delegation_outputs["t1"] == "The file marks this build as UNIQUE_MARKER_42."
 
     # inputs.read_paths must have actually handed the file content to the model.
