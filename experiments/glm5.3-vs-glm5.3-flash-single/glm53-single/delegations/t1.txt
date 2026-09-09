@@ -1,0 +1,50 @@
+## What I changed
+
+Two minimal one-line edits, both in `/testbed/astropy/io/ascii/qdp.py` (nothing else touched):
+
+1. `_line_type()` (line 71): `_line_type_re = re.compile(_type_re, re.IGNORECASE)` â so `READ SERR`/`READ TERR` commands are recognized regardless of case (`read serr 1 2`, `Read TERR 1`, ...). Verified: on pristine code, `read serr 1 2` raised `ValueError: Unrecognized QDP line`; now it parses.
+2. `_get_tables_from_qdp_file()` (line 309), data-value loop: `if v == "NO":` â `if v.upper() == "NO":` â so lowercase `no` in a data line is treated as a masked value instead of crashing on `float(v)`. Verified with a file containing `1 no`: `col1_err` comes back masked.
+
+## Why
+
+QDP itself is case-insensitive; the reader rejected lowercase/mixed-case command lines and choked on lowercase `no` placeholders.
+
+## Checks run
+
+- `pytest astropy/io/ascii/tests/test_qdp.py -q` â 8 passed.
+- `pytest --doctest-modules astropy/io/ascii/qdp.py -q` â 4 passed.
+- Lowercase/mixed-case command files now read with correct error columns and masked values.
+
+## Noticed but NOT addressed (important)
+
+Two of the delegated ad-hoc checks fail, and the failure is in their *expected colnames*, not in case-insensitivity â which is now working. I did not "fix" them because the delegation explicitly excludes column-name logic, and the expectations are provably inconsistent with the code's own passing doctests:
+
+- Check 1 (`read serr 1 2` + data line `1 0.5 1 0.5`) expects `['col1', 'col2', 'col2_err']` (3 names) for a 4-value data line. Column count must equal the data-line column count, and `READ SERR 1 2` interleaves errors: `['col1', 'col1_err', 'col2', 'col2_err']`, which is what we return. The check's value assertions (`len(t)==1`, `t[0]['col2_err']==0.5`) do pass.
+- Check 2 (`Read TERR 1` + `1 2 3`) expects `['col1', 'col1_nerr', 'col1_perr', 'col2']` (4 names, `nerr` before `perr`) for a 3-value data line. We return `['col1', 'col1_perr', 'col1_nerr']` (perr first), which matches the module's own doctest in `_interpret_err_lines` (`cols[2] == 'MJD_nerr'` with perr at index 1). Satisfying this check would require swapping perr/nerr, which would break the passing doctests â i.e. the two checks contradict each other.
+
+So the case-insensitivity fix is correct and complete per the delegation; if those two colname expectations are meant to be authoritative, the expectations (not `qdp.py`) need revisiting.
+
+Not examined / out of scope: comma-delimited files with lowercase `no` (the delimiter path uses the same loop, so it should already be covered), and the writer always emits uppercase `NO` (unchanged, as instructed).
+===PATCH===
+diff --git a/astropy/io/ascii/qdp.py b/astropy/io/ascii/qdp.py
+index 83a4f004a..5324dc81c 100755
+--- a/astropy/io/ascii/qdp.py
++++ b/astropy/io/ascii/qdp.py
+@@ -68,7 +68,7 @@ def _line_type(line, delimiter=None):
+     _new_re = rf"NO({sep}NO)+"
+     _data_re = rf"({_decimal_re}|NO|[-+]?nan)({sep}({_decimal_re}|NO|[-+]?nan))*)"
+     _type_re = rf"^\s*((?P<command>{_command_re})|(?P<new>{_new_re})|(?P<data>{_data_re})?\s*(\!(?P<comment>.*))?\s*$"
+-    _line_type_re = re.compile(_type_re)
++    _line_type_re = re.compile(_type_re, re.IGNORECASE)
+     line = line.strip()
+     if not line:
+         return "comment"
+@@ -306,7 +306,7 @@ def _get_tables_from_qdp_file(qdp_file, input_colnames=None, delimiter=None):
+ 
+             values = []
+             for v in line.split(delimiter):
+-                if v == "NO":
++                if v.upper() == "NO":
+                     values.append(np.ma.masked)
+                 else:
+                     # Understand if number is int or float

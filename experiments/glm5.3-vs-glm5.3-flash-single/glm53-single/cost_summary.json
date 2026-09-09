@@ -1,0 +1,418 @@
+{
+  "instance_id": "astropy__astropy-14365",
+  "gru_model": "openrouter/z-ai/glm-5.3",
+  "minion_model": "openrouter/z-ai/glm-5.3-flash",
+  "start_time": 1788405429.4097369,
+  "end_time": 1788405774.061605,
+  "wall_clock_seconds": 344.6518681049347,
+  "exit_status": "Submitted",
+  "final_verification_passed": true,
+  "final_verification_output": "$ cd /testbed && printf 'read serr 1 2\\n1 0.5 1 0.5\\n' > /tmp/test_lower.qdp && python -W ignore -c \"\nfrom astropy.table import Table\nimport numpy as np\nt = Table.read('/tmp/test_lower.qdp', format='ascii.qdp')\nassert t.colnames == ['col1', 'col1_err', 'col2', 'col2_err'], t.colnames\nassert np.allclose(t[0]['col1_err'], 0.5) and np.allclose(t[0]['col2_err'], 0.5)\nprint('PR reproduction: lowercase qdp file reads with errors OK')\n\"\n(exit 0)\nPR reproduction: lowercase qdp file reads with errors OK\n\n\n$ cd /testbed && printf 'Read TERR 1\\n1 2 3\\n' > /tmp/test_mixed.qdp && python -W ignore -c \"\nfrom astropy.table import Table\nt = Table.read('/tmp/test_mixed.qdp', format='ascii.qdp')\nassert t.colnames == ['col1', 'col1_perr', 'col1_nerr'], t.colnames\nprint('mixed-case command OK')\n\"\n(exit 0)\nmixed-case command OK\n\n\n$ cd /testbed && printf 'read serr 1 2\\n1 0.5 1 0.5\\n2 0.5 no 0.5\\n' > /tmp/test_full.qdp && python -W ignore -c \"\nfrom astropy.table import Table\nimport numpy as np, numpy.ma as ma\nt = Table.read('/tmp/test_full.qdp', format='ascii.qdp')\nassert t.colnames == ['col1', 'col1_err', 'col2', 'col2_err'], t.colnames\nassert len(t) == 2 and np.allclose(t[1]['col2_err'], 0.5)\nassert np.ma.is_masked(t['col2'][1])\nprint('lowercase command + lowercase no masked value OK')\n\"\n(exit 0)\nlowercase command + lowercase no masked value OK\n\n\n$ cd /testbed && python -m pytest astropy/io/ascii/tests/test_qdp.py -q 2>&1 | tail -1\n(exit 0)\n\u001b[32m\u001b[32m\u001b[1m8 passed\u001b[0m\u001b[32m in 0.05s\u001b[0m\u001b[0m\n\n\n$ cd /testbed && python -m pytest --doctest-modules astropy/io/ascii/qdp.py -q 2>&1 | tail -1\n(exit 0)\n\u001b[32m\u001b[32m\u001b[1m4 passed\u001b[0m\u001b[32m in 0.01s\u001b[0m\u001b[0m\n\n\n$ cd /testbed && python -m pytest astropy/io/ascii/tests/ -q 2>&1 | tail -1\n(exit 0)\n\u001b[32m\u001b[32m\u001b[1m825 passed\u001b[0m, \u001b[33m36 skipped\u001b[0m, \u001b[33m6 xfailed\u001b[0m\u001b[32m in 13.66s\u001b[0m\u001b[0m\n",
+  "gru_action_log": [
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "ls /testbed/astropy/io/ascii/",
+          "grep -n 'READ\\|SERR\\|TERR\\|Unrecognized' /testbed/astropy/io/ascii/qdp.py | head -60"
+        ]
+      },
+      "tokens": 2709,
+      "cost": 0.00423828
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "sed -n 1,120p /testbed/astropy/io/ascii/qdp.py"
+        ]
+      },
+      "tokens": 3152,
+      "cost": 0.00132352
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "grep -n 'read\\|serr\\|terr\\|NO\\|line_type\\|command' /testbed/astropy/io/ascii/qdp.py | sed -n 1,80p"
+        ]
+      },
+      "tokens": 3882,
+      "cost": 0.00181476
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "sed -n 130,180p /testbed/astropy/io/ascii/qdp.py"
+        ]
+      },
+      "tokens": 4633,
+      "cost": 0.00182444
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "grep -n 'err_specs\\|match.group\\|_line_type(' /testbed/astropy/io/ascii/qdp.py"
+        ]
+      },
+      "tokens": 5111,
+      "cost": 0.00150964
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "sed -n 255,330p /testbed/astropy/io/ascii/qdp.py"
+        ]
+      },
+      "tokens": 5830,
+      "cost": 0.00188744
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "grep -n -i 'read s\\|read t\\|case\\|lower' /testbed/astropy/io/ascii/tests/test_qdp.py | head -30",
+          "sed -n 25,40p /testbed/astropy/io/ascii/qdp.py"
+        ]
+      },
+      "tokens": 6955,
+      "cost": 0.00455408
+    },
+    {
+      "kind": "delegate_to_minion",
+      "args": {
+        "description": "Fix the astropy ascii.qdp reader (/testbed/astropy/io/ascii/qdp.py) to be case-insensitive, matching QDP's own behavior. Required changes, all in /testbed/astropy/io/ascii/qdp.py only (do NOT touch tests or config files):\n\n1. In the `_line_type` function, compile `_line_type_re` with `re.IGNORECASE` (i.e. `re.compile(_type_re, re.IGNORECASE)`) so commands like \"read serr 1 2\" or \"Read TERR 1\" are recognized, and so the existing doctest examples still pass.\n\n2. In the data-parsing loop in `_read_table_qdp` (the `for v in line.split(delimiter):` loop inside the `if datatype.startswith(\"data\"):` branch), change the masked-value check from `if v == \"NO\":` to a case-insensitive comparison (e.g. `if v.upper() == \"NO\":`) so that a lowercase \"no\" in a data line is treated as a masked value instead of crashing on float conversion.\n\nDo not change anything else (the writer, column-name logic, `command[1].lower()` handling, etc. already behave correctly). Make minimal, style-consistent edits.",
+        "returns": "verdict",
+        "mode": "agentic",
+        "inputs": {
+          "read_paths": [
+            "/testbed/astropy/io/ascii/qdp.py"
+          ],
+          "scope": "/testbed/astropy/io/ascii/qdp.py"
+        },
+        "verification": {
+          "checks": [
+            "cd /testbed && printf 'read serr 1 2\\n1 0.5 1 0.5\\n' > /tmp/test_lower.qdp && python -c \"\nfrom astropy.table import Table\nimport numpy as np\nwith open('/tmp/test_lower.qdp') as f:\n    t = Table.read('/tmp/test_lower.qdp', format='ascii.qdp')\nassert len(t) == 1, t\nassert t.colnames == ['col1', 'col2', 'col2_err'], t.colnames\nassert np.allclose(t[0]['col2_err'], 0.5)\nprint('lowercase command OK')\n\"",
+            "cd /testbed && printf 'Read TERR 1\\n1 2 3\\n' > /tmp/test_mixed.qdp && python -c \"\nfrom astropy.table import Table\nt = Table.read('/tmp/test_mixed.qdp', format='ascii.qdp')\nassert t.colnames == ['col1', 'col1_nerr', 'col1_perr', 'col2'], t.colnames\nprint('mixed-case command OK')\n\"",
+            "cd /testbed && python -m pytest astropy/io/ascii/tests/test_qdp.py -q 2>&1 | tail -3",
+            "cd /testbed && python -m pytest --doctest-modules astropy/io/ascii/qdp.py -q 2>&1 | tail -3"
+          ]
+        },
+        "output_contract": "qdp.py edited as specified; pass/fail from the verification checks"
+      },
+      "tokens": 9498,
+      "cost": 0.0121878
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "cd /testbed && printf 'read serr 1 2\\n1 0.5 1 0.5\\n' > /tmp/test_lower.qdp && python -W ignore -c \"\nfrom astropy.table import Table\nimport numpy as np\nt = Table.read('/tmp/test_lower.qdp', format='ascii.qdp')\nassert t.colnames == ['col1', 'col1_err', 'col2', 'col2_err'], t.colnames\nassert np.allclose(t[0]['col1_err'], 0.5) and np.allclose(t[0]['col2_err'], 0.5)\nprint('lowercase command OK', t.colnames)\n\"",
+          "cd /testbed && printf 'Read TERR 1\\n1 2 3\\n' > /tmp/test_mixed.qdp && python -W ignore -c \"\nfrom astropy.table import Table\nt = Table.read('/tmp/test_mixed.qdp', format='ascii.qdp')\nassert t.colnames == ['col1', 'col1_perr', 'col1_nerr'], t.colnames\nprint('mixed-case command OK', t.colnames)\n\"",
+          "cd /testbed && printf 'read serr 1\\n1 0.5 no\\n' > /tmp/test_no.qdp && python -W ignore -c \"\nfrom astropy.table import Table\nimport numpy as np\nt = Table.read('/tmp/test_no.qdp', format='ascii.qdp')\nassert t.colnames == ['col1', 'col1_err', 'col2'], t.colnames\nassert t['col2'].mask[0]\nassert not t['col1_err'].mask[0]\nprint('lowercase no masked OK')\n\"",
+          "cd /testbed && python -m pytest astropy/io/ascii/tests/test_qdp.py -q 2>&1 | tail -2",
+          "cd /testbed && python -m pytest --doctest-modules astropy/io/ascii/qdp.py -q 2>&1 | tail -2",
+          "cd /testbed && git diff"
+        ]
+      },
+      "tokens": 11638,
+      "cost": 0.00908588
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "cd /testbed && python -W ignore -c \"\nfrom astropy.table import Table\nt = Table.read('/tmp/test_no.qdp', format='ascii.qdp')\nprint(t)\nprint(repr(t['col2']))\nassert t.colnames == ['col1', 'col1_err', 'col2'], t.colnames\nprint('lowercase no parsed without crash; col2 value:', t[0]['col2'])\n\"",
+          "cd /testbed && printf '! comment\\nread serr 1 2\\n1 0.5 1 0.5\\nNO NO NO NO\\n2 0.1 2 0.1\\n' > /tmp/test_full.qdp && python -W ignore -c \"\nfrom astropy.table import Table\nimport numpy as np\nt = Table.read('/tmp/test_full.qdp', format='ascii.qdp')\nassert t.colnames == ['col1', 'col1_err', 'col2', 'col2_err'], t.colnames\nassert len(t) == 2\nassert np.allclose(t[1]['col2'], 2) and np.allclose(t[1]['col2_err'], 0.1)\nprint('full lowercase file OK')\n\"",
+          "cd /testbed && printf 'read serr 1 2\\n1 0.5 1 0.5\\n' > /tmp/test_w.qdp && python -W ignore -c \"\nfrom astropy.table import Table\nimport numpy as np\nt = Table.read('/tmp/test_w.qdp', format='ascii.qdp')\nt.write('/tmp/test_out.qdp')\nlines = open('/tmp/test_out.qdp').readlines()\nassert any(l.upper().startswith('READ SERR') for l in lines), lines\nprint('write path OK')\n\"",
+          "cd /testbed && python -m pytest astropy/io/ascii/tests/ -q 2>&1 | tail -2"
+        ]
+      },
+      "tokens": 13346,
+      "cost": 0.00680764
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "cd /testbed && git stash && printf 'READ SERR 1 2\\n1 0.5 1 0.5\\nNO NO NO NO\\n2 0.1 2 0.1\\n' > /tmp/test_upper_pre.qdp && python -W ignore -c \"\nfrom astropy.table import Table\nt = Table.read('/tmp/test_upper_pre.qdp', format='ascii.qdp')\nprint('pre-existing upper-case tables returned:', len(t) if hasattr(t,'__len__') else 1)\n\" ; git stash pop",
+          "cd /testbed && printf 'read serr 1 2\\n1 0.5 1 0.5\\n2 0.5 no 0.5\\n' > /tmp/test_full.qdp && python -W ignore -c \"\nfrom astropy.table import Table\nimport numpy as np\nt = Table.read('/tmp/test_full.qdp', format='ascii.qdp')\nassert t.colnames == ['col1', 'col1_err', 'col2', 'col2_err'], t.colnames\nassert len(t) == 2\nassert np.allclose(t[1]['col2'], 2) and np.allclose(t[1]['col2_err'], 0.5)\nprint('full lowercase file with lowercase no OK')\n\""
+        ]
+      },
+      "tokens": 14602,
+      "cost": 0.00637208
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "cd /testbed && printf 'read serr 1 2\\n1 0.5 1 0.5\\n2 0.5 no 0.5\\n' > /tmp/test_full.qdp && python -W ignore -c \"\nfrom astropy.table import Table\nimport numpy as np, numpy.ma as ma\nt = Table.read('/tmp/test_full.qdp', format='ascii.qdp')\nassert t.colnames == ['col1', 'col1_err', 'col2', 'col2_err'], t.colnames\nassert len(t) == 2\nassert np.allclose(t[1]['col2_err'], 0.5)\nassert bool(t['col2'][1] is ma.masked) or bool(np.ma.is_masked(t['col2'][1]))\nprint('full lowercase file with lowercase no OK')\n\"",
+          "cd /testbed && git diff --stat && python -m pytest astropy/io/ascii/tests/test_qdp.py -q 2>&1 | tail -1 && python -m pytest --doctest-modules astropy/io/ascii/qdp.py -q 2>&1 | tail -1 && python -m pytest astropy/io/ascii/tests/ -q 2>&1 | tail -1"
+        ]
+      },
+      "tokens": 15762,
+      "cost": 0.00596928
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "cd /testbed && head -5 patch.txt summary.md 2>/dev/null; rm -f patch.txt summary.md && git status --short"
+        ]
+      },
+      "tokens": 16369,
+      "cost": 0.00413396
+    },
+    {
+      "kind": "finish",
+      "args": {
+        "summary": "Made the astropy `ascii.qdp` reader case-insensitive, matching QDP's own behavior, so hand-written files with commands like \"read serr 1 2\" parse instead of raising `ValueError: Unrecognized QDP line`.\n\nChanges (both in `astropy/io/ascii/qdp.py`, 2 lines):\n1. `_line_type()`: compile `_line_type_re` with `re.IGNORECASE`, so `READ SERR`/`READ TERR` commands (and NO/nan tokens) are recognized in any letter case. The downstream `command[1].lower()` handling already coped with case once the line is classified as a command.\n2. Data-value loop in the table-extraction function: `if v == \"NO\":` \u2192 `if v.upper() == \"NO\":` so a lowercase \"no\" placeholder in a data line is treated as a masked value instead of crashing on `float(\"no\")` (required because the IGNORECASE regex now accepts such data lines).\n\nVerified: the exact file from the PR description (`read serr 1 2` / `1 0.5 1 0.5`) reads into a Table with columns `col1, col1_err, col2, col2_err`; mixed-case `Read TERR 1` works; files combining lowercase commands with lowercase \"no\" masked values read correctly; the write path is unchanged (still emits uppercase commands). Full `astropy/io/ascii` test suite (825 passed), the qdp doctests, and `test_qdp.py` (8 passed) all pass. Two earlier check failures were flaws in my own assertions (error columns interleave as `col1_err` before `col2`, and all-NO lines are QDP table separators \u2014 confirmed pre-existing on pristine code), not in the fix. Also removed two stray artifacts (`patch.txt`, `summary.md`) left by the delegated edit, leaving only the intended source change.",
+        "final_verification": {
+          "checks": [
+            "cd /testbed && printf 'read serr 1 2\\n1 0.5 1 0.5\\n' > /tmp/test_lower.qdp && python -W ignore -c \"\nfrom astropy.table import Table\nimport numpy as np\nt = Table.read('/tmp/test_lower.qdp', format='ascii.qdp')\nassert t.colnames == ['col1', 'col1_err', 'col2', 'col2_err'], t.colnames\nassert np.allclose(t[0]['col1_err'], 0.5) and np.allclose(t[0]['col2_err'], 0.5)\nprint('PR reproduction: lowercase qdp file reads with errors OK')\n\"",
+            "cd /testbed && printf 'Read TERR 1\\n1 2 3\\n' > /tmp/test_mixed.qdp && python -W ignore -c \"\nfrom astropy.table import Table\nt = Table.read('/tmp/test_mixed.qdp', format='ascii.qdp')\nassert t.colnames == ['col1', 'col1_perr', 'col1_nerr'], t.colnames\nprint('mixed-case command OK')\n\"",
+            "cd /testbed && printf 'read serr 1 2\\n1 0.5 1 0.5\\n2 0.5 no 0.5\\n' > /tmp/test_full.qdp && python -W ignore -c \"\nfrom astropy.table import Table\nimport numpy as np, numpy.ma as ma\nt = Table.read('/tmp/test_full.qdp', format='ascii.qdp')\nassert t.colnames == ['col1', 'col1_err', 'col2', 'col2_err'], t.colnames\nassert len(t) == 2 and np.allclose(t[1]['col2_err'], 0.5)\nassert np.ma.is_masked(t['col2'][1])\nprint('lowercase command + lowercase no masked value OK')\n\"",
+            "cd /testbed && python -m pytest astropy/io/ascii/tests/test_qdp.py -q 2>&1 | tail -1",
+            "cd /testbed && python -m pytest --doctest-modules astropy/io/ascii/qdp.py -q 2>&1 | tail -1",
+            "cd /testbed && python -m pytest astropy/io/ascii/tests/ -q 2>&1 | tail -1"
+          ]
+        }
+      },
+      "tokens": 17666,
+      "cost": 0.00731248
+    }
+  ],
+  "gru": {
+    "api_calls": 14,
+    "cost": 0.06902127999999999,
+    "prompt_tokens": 124246,
+    "completion_tokens": 6907,
+    "total_tokens": 131153,
+    "cache": {
+      "n_calls": 14,
+      "total_prompt_tokens": 124246,
+      "reported_cached_tokens": 107392,
+      "reported_cache_hit_pct": 86.43,
+      "estimated_reused_tokens": 113487,
+      "estimated_cache_hit_pct": 91.34,
+      "per_call": [
+        {
+          "prompt_tokens": 2547,
+          "completion_tokens": 162,
+          "reported_cached_tokens": 32,
+          "estimated_reused_tokens": 0,
+          "estimated_new_tokens": 2547
+        },
+        {
+          "prompt_tokens": 3120,
+          "completion_tokens": 32,
+          "reported_cached_tokens": 2528,
+          "estimated_reused_tokens": 2709,
+          "estimated_new_tokens": 411
+        },
+        {
+          "prompt_tokens": 3785,
+          "completion_tokens": 97,
+          "reported_cached_tokens": 3104,
+          "estimated_reused_tokens": 3152,
+          "estimated_new_tokens": 633
+        },
+        {
+          "prompt_tokens": 4601,
+          "completion_tokens": 32,
+          "reported_cached_tokens": 3776,
+          "estimated_reused_tokens": 3882,
+          "estimated_new_tokens": 719
+        },
+        {
+          "prompt_tokens": 5071,
+          "completion_tokens": 40,
+          "reported_cached_tokens": 4576,
+          "estimated_reused_tokens": 4633,
+          "estimated_new_tokens": 438
+        },
+        {
+          "prompt_tokens": 5798,
+          "completion_tokens": 32,
+          "reported_cached_tokens": 5056,
+          "estimated_reused_tokens": 5111,
+          "estimated_new_tokens": 687
+        },
+        {
+          "prompt_tokens": 6250,
+          "completion_tokens": 705,
+          "reported_cached_tokens": 5792,
+          "estimated_reused_tokens": 5830,
+          "estimated_new_tokens": 420
+        },
+        {
+          "prompt_tokens": 7247,
+          "completion_tokens": 2251,
+          "reported_cached_tokens": 6240,
+          "estimated_reused_tokens": 6955,
+          "estimated_new_tokens": 292
+        },
+        {
+          "prompt_tokens": 11003,
+          "completion_tokens": 635,
+          "reported_cached_tokens": 7232,
+          "estimated_reused_tokens": 9498,
+          "estimated_new_tokens": 1505
+        },
+        {
+          "prompt_tokens": 12695,
+          "completion_tokens": 651,
+          "reported_cached_tokens": 10976,
+          "estimated_reused_tokens": 11638,
+          "estimated_new_tokens": 1057
+        },
+        {
+          "prompt_tokens": 13970,
+          "completion_tokens": 632,
+          "reported_cached_tokens": 12672,
+          "estimated_reused_tokens": 13346,
+          "estimated_new_tokens": 624
+        },
+        {
+          "prompt_tokens": 15268,
+          "completion_tokens": 494,
+          "reported_cached_tokens": 13952,
+          "estimated_reused_tokens": 14602,
+          "estimated_new_tokens": 666
+        },
+        {
+          "prompt_tokens": 16219,
+          "completion_tokens": 150,
+          "reported_cached_tokens": 15264,
+          "estimated_reused_tokens": 15762,
+          "estimated_new_tokens": 457
+        },
+        {
+          "prompt_tokens": 16672,
+          "completion_tokens": 994,
+          "reported_cached_tokens": 16192,
+          "estimated_reused_tokens": 16369,
+          "estimated_new_tokens": 303
+        }
+      ]
+    }
+  },
+  "minions": [
+    {
+      "delegation_id": "t1",
+      "returns": "verdict",
+      "mode": "agentic",
+      "description": "Fix the astropy ascii.qdp reader (/testbed/astropy/io/ascii/qdp.py) to be case-insensitive, matching QDP's own behavior. Required changes, all in /testbed/astropy/io/ascii/qdp.py only (do NOT touch tests or config files):\n\n1. In the `_line_type` function, compile `_line_type_re` with `re.IGNORECASE` (i.e. `re.compile(_type_re, re.IGNORECASE)`) so commands like \"read serr 1 2\" or \"Read TERR 1\" are recognized, and so the existing doctest examples still pass.\n\n2. In the data-parsing loop in `_read_table_qdp` (the `for v in line.split(delimiter):` loop inside the `if datatype.startswith(\"data\"):` branch), change the masked-value check from `if v == \"NO\":` to a case-insensitive comparison (e.g. `if v.upper() == \"NO\":`) so that a lowercase \"no\" in a data line is treated as a masked value instead of crashing on float conversion.\n\nDo not change anything else (the writer, column-name logic, `command[1].lower()` handling, etc. already behave correctly). Make minimal, style-consistent edits.",
+      "scope": "/testbed/astropy/io/ascii/qdp.py",
+      "api_calls": 10,
+      "prompt_tokens": 104990,
+      "completion_tokens": 6785,
+      "total_tokens": 111775,
+      "exit_status": "Submitted",
+      "trajectory_path": "results/glm53-single/minions/t1.traj.json",
+      "output_path": "results/glm53-single/delegations/t1.txt",
+      "cache": {
+        "n_calls": 10,
+        "total_prompt_tokens": 104990,
+        "reported_cached_tokens": 41600,
+        "reported_cache_hit_pct": 39.62,
+        "estimated_reused_tokens": 96734,
+        "estimated_cache_hit_pct": 92.14,
+        "per_call": [
+          {
+            "prompt_tokens": 6531,
+            "completion_tokens": 59,
+            "reported_cached_tokens": 0,
+            "estimated_reused_tokens": 0,
+            "estimated_new_tokens": 6531
+          },
+          {
+            "prompt_tokens": 6632,
+            "completion_tokens": 186,
+            "reported_cached_tokens": 0,
+            "estimated_reused_tokens": 6590,
+            "estimated_new_tokens": 42
+          },
+          {
+            "prompt_tokens": 7157,
+            "completion_tokens": 266,
+            "reported_cached_tokens": 0,
+            "estimated_reused_tokens": 6818,
+            "estimated_new_tokens": 339
+          },
+          {
+            "prompt_tokens": 7580,
+            "completion_tokens": 1817,
+            "reported_cached_tokens": 128,
+            "estimated_reused_tokens": 7423,
+            "estimated_new_tokens": 157
+          },
+          {
+            "prompt_tokens": 9791,
+            "completion_tokens": 1308,
+            "reported_cached_tokens": 7552,
+            "estimated_reused_tokens": 9397,
+            "estimated_new_tokens": 394
+          },
+          {
+            "prompt_tokens": 11386,
+            "completion_tokens": 1423,
+            "reported_cached_tokens": 0,
+            "estimated_reused_tokens": 11099,
+            "estimated_new_tokens": 287
+          },
+          {
+            "prompt_tokens": 12922,
+            "completion_tokens": 860,
+            "reported_cached_tokens": 9728,
+            "estimated_reused_tokens": 12809,
+            "estimated_new_tokens": 113
+          },
+          {
+            "prompt_tokens": 13815,
+            "completion_tokens": 18,
+            "reported_cached_tokens": 12864,
+            "estimated_reused_tokens": 13782,
+            "estimated_new_tokens": 33
+          },
+          {
+            "prompt_tokens": 14172,
+            "completion_tokens": 811,
+            "reported_cached_tokens": 0,
+            "estimated_reused_tokens": 13833,
+            "estimated_new_tokens": 339
+          },
+          {
+            "prompt_tokens": 15004,
+            "completion_tokens": 37,
+            "reported_cached_tokens": 11328,
+            "estimated_reused_tokens": 14983,
+            "estimated_new_tokens": 21
+          }
+        ]
+      },
+      "checks_passed": false
+    }
+  ],
+  "minions_total": {
+    "count": 1,
+    "api_calls": 10,
+    "prompt_tokens": 104990,
+    "completion_tokens": 6785,
+    "total_tokens": 111775
+  },
+  "cache_totals": {
+    "n_sessions": 2,
+    "n_calls": 24,
+    "total_prompt_tokens": 229236,
+    "reported_cached_tokens": 148992,
+    "reported_over_prompt_tokens": 229236,
+    "reported_sessions": 2,
+    "reported_cache_hit_pct": 65.0,
+    "estimated_reused_tokens": 210221,
+    "estimated_cache_hit_pct": 91.71
+  }
+}

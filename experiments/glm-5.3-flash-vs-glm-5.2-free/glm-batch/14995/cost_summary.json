@@ -1,0 +1,144 @@
+{
+  "instance_id": "astropy__astropy-14995",
+  "gru_model": "openrouter/z-ai/glm-5.3-flash",
+  "minion_model": "openrouter/z-ai/glm-5.2:free",
+  "start_time": 1788391927.8522651,
+  "end_time": 1788393035.9186037,
+  "wall_clock_seconds": 1108.0663385391235,
+  "exit_status": "Crashed:RateLimitError",
+  "final_verification_passed": null,
+  "final_verification_output": "",
+  "gru_action_log": [
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "cd /testbed && git log --oneline -2 && python - <<'EOF'\nimport numpy as np, astropy\nprint(\"astropy\", astropy.__version__)\nfrom astropy.nddata import NDDataRef\n\narray = np.array([[0, 1, 0], [1, 0, 1], [0, 1, 0]])\nmask = np.array([[0, 1, 64], [8, 0, 1], [2, 1, 0]])\nnref_nomask = NDDataRef(array)\nnref_mask = NDDataRef(array, mask=mask)\n\ndef t(name, fn):\n    try:\n        print(name, \"->\", fn())\n    except Exception as e:\n        print(name, \"-> RAISED\", type(e).__name__, \":\", e)\n\nt(\"nomask * 1 (no mask * no mask)  \", lambda: nref_nomask.multiply(1., handle_mask=np.bitwise_or).mask)\nt(\"nomask * nomask (no mask*no mask)\", lambda: nref_nomask.multiply(nref_nomask, handle_mask=np.bitwise_or).mask)\nt(\"mask * 1 (mask * no mask)        \", lambda: nref_mask.multiply(1., handle_mask=np.bitwise_or).mask)\nt(\"mask * nomask (mask * no mask)   \", lambda: nref_mask.multiply(nref_nomask, handle_mask=np.bitwise_or).mask)\nt(\"nomask * mask (no mask * mask)   \", lambda: nref_nomask.multiply(nref_mask, handle_mask=np.bitwise_or).mask)\nt(\"mask * mask (mask * mask)        \", lambda: nref_mask.multiply(nref_mask, handle_mask=np.bitwise_or).mask)\nt(\"mask * 1 with DEFAULT handle_mask\", lambda: nref_mask.multiply(1.).mask)\nEOF",
+          "cd /testbed && grep -n \"def \\|handle_mask\" astropy/nddata/mixins/ndarithmetic.py | head -80"
+        ]
+      },
+      "tokens": 10218,
+      "cost": 0.002057675
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "cd /testbed && sed -n '160,355p' astropy/nddata/mixins/ndarithmetic.py",
+          "cd /testbed && sed -n '485,530p' astropy/nddata/mixins/ndarithmetic.py",
+          "cd /testbed && sed -n '654,770p' astropy/nddata/mixins/ndarithmetic.py",
+          "cd /testbed && python - <<'EOF'\nimport numpy as np\nm = np.array([[0, 1, 64], [8, 0, 1], [2, 1, 0]])\ntry:\n    print(\"bitwise_or(m, None) ->\", np.bitwise_or(m, None))\nexcept Exception as e:\n    print(\"bitwise_or(m, None) RAISED\", type(e).__name__, e)\nEOF"
+        ]
+      },
+      "tokens": 16297,
+      "cost": 0.001913265
+    },
+    {
+      "kind": "run_check",
+      "args": {
+        "checks": [
+          "cat > /tmp/verify_nddata_mask_fix.py <<'EOF'\n\"\"\"Verification for NDDataRef mask propagation when one operand has no mask.\n\nMirrors the reported issue (astropy v5.3 regression) plus generality checks.\n\"\"\"\nimport numpy as np\nfrom astropy.nddata import NDDataRef\n\narray = np.array([[0, 1, 0], [1, 0, 1], [0, 1, 0]])\nmask = np.array([[0, 1, 64], [8, 0, 1], [2, 1, 0]])\nnref_nomask = NDDataRef(array)\nnref_mask = NDDataRef(array, mask=mask)\n\ndef eq(a, b):\n    np.testing.assert_array_equal(a, b)\n\n# --- 1. no mask * no mask -> result has no mask\nassert nref_nomask.multiply(1.0, handle_mask=np.bitwise_or).mask is None\nassert nref_nomask.multiply(nref_nomask, handle_mask=np.bitwise_or).mask is None\nassert nref_nomask.add(nref_nomask, handle_mask=np.bitwise_or).mask is None\n\n# --- 2. mask * no mask (constant or NDData) -> existing mask copied over, no TypeError\nfor op in (\"multiply\", \"add\", \"subtract\", \"divide\"):\n    r = getattr(nref_mask, op)(1.0, handle_mask=np.bitwise_or).mask\n    eq(r, mask)\n    r = getattr(nref_mask, op)(nref_nomask, handle_mask=np.bitwise_or).mask\n    eq(r, mask)\n\n# --- 3. no mask * mask -> operand's mask copied over\nfor op in (\"multiply\", \"add\", \"subtract\", \"divide\"):\n    r = getattr(nref_nomask, op)(nref_mask, handle_mask=np.bitwise_or).mask\n    eq(r, mask)\n\n# --- 4. mask * mask -> handle_mask is applied elementwise\nmask2 = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])\nn2 = NDDataRef(array, mask=mask2)\neq(nref_mask.multiply(n2, handle_mask=np.bitwise_or).mask, mask | mask2)\neq(nref_mask.multiply(n2, handle_mask=np.bitwise_and).mask, mask & mask2)\neq(nref_mask.multiply(nref_mask, handle_mask=np.bitwise_or).mask, mask)\n\n# --- 5. default handle_mask path: result mask must be the integer mask, not object garbage\nfor expr in (\n    nref_mask.multiply(1.0).mask,\n    nref_mask.multiply(nref_nomask).mask,\n    nref_nomask.multiply(nref_mask).mask,\n):\n    eq(expr, mask)\n    assert expr.dtype == mask.dtype, f\"wrong dtype {expr.dtype}\"\n\n# --- 6. result mask is a copy, not a reference into the operands\nassert nref_mask.multiply(1.0).mask is not nref_mask.mask\nassert nref_nomask.multiply(nref_mask, handle_mask=np.bitwise_or).mask is not nref_mask.mask\n\nprint(\"ALL MASK PROPAGATION CHECKS PASSED\")\nEOF\npython /tmp/verify_nddata_mask_fix.py; echo \"verify-script exit: $?\"",
+          "python - <<'EOF'\nimport numpy as np\nm = np.array([[0, 1, 64], [8, 0, 1], [2, 1, 0]])\nprint(\"logical_or(m, None) ->\", np.logical_or(m, None))\nEOF",
+          "cd /testbed && grep -n ",
+          [
+            8,
+            0,
+            1
+          ],
+          [
+            2,
+            1,
+            0
+          ]
+        ]
+      },
+      "tokens": 36550,
+      "cost": 0.005355945
+    },
+    {
+      "kind": "delegate_to_minion",
+      "args": {
+        "description": "In the astropy repo at /testbed, apply ONE small, precisely-specified edit to fix the NDDataRef mask-propagation regression (TypeError when one operand has no mask).\n\nFile: /testbed/astropy/nddata/mixins/ndarithmetic.py\nMethod: `_arithmetic_mask` of class `NDArithmeticMixin` (currently ~lines 485-528).\n\nIts branch chain currently is:\n\n```python\n        # If only one mask is present we need not bother about any type checks\n        if (\n            self.mask is None and operand is not None and operand.mask is None\n        ) or handle_mask is None:\n            return None\n        elif self.mask is None and operand is not None:\n            # Make a copy so there is no reference in the result.\n            return deepcopy(operand.mask)\n        elif operand is None:\n            return deepcopy(self.mask)\n        else:\n            # Now lets calculate the resulting mask (operation enforces copy)\n            return handle_mask(self.mask, operand.mask, **kwds)\n```\n\nBug: when `self.mask` is not None but `operand.mask` is None (operand is an NDData-like instance without a mask), control falls through to the `else` branch and `handle_mask` is invoked with None as second argument (e.g. np.bitwise_or -> \"TypeError: unsupported operand type(s) for |: 'int' and 'NoneType'\").\n\nRequired edit \u2014 change the third branch ONLY, from:\n\n```python\n        elif operand is None:\n            return deepcopy(self.mask)\n```\n\nto:\n\n```python\n        elif operand is None or operand.mask is None:\n            # Make a copy so there is no reference in the result.\n            return deepcopy(self.mask)\n```\n\nDo NOT change anything else in this file and do NOT touch any other file: no test files, no docs/changelog, no configuration or packaging files. The repo must end up with exactly this one file modified.",
+        "inputs": {
+          "scope": "/testbed/astropy/nddata/mixins/ndarithmetic.py"
+        },
+        "mode": "agentic",
+        "output_contract": "Verdict pass/fail plus a one-paragraph summary of exactly what was changed in the file.",
+        "returns": "verdict",
+        "verification": {
+          "checks": [
+            "cd /testbed && python /tmp/verify_nddata_mask_fix.py",
+            "cd /testbed && python -m pytest astropy/nddata -q",
+            "cd /testbed && diff <(git diff --name-only) <(printf 'astropy/nddata/mixins/ndarithmetic.py\\n')"
+          ]
+        }
+      },
+      "tokens": 40007,
+      "cost": 0.002343535
+    }
+  ],
+  "gru": {
+    "api_calls": 4,
+    "cost": 0.01167042,
+    "prompt_tokens": 69652,
+    "completion_tokens": 33420,
+    "total_tokens": 103072,
+    "cache": {
+      "n_calls": 4,
+      "total_prompt_tokens": 69652,
+      "reported_cached_tokens": 31808,
+      "reported_cache_hit_pct": 45.67,
+      "estimated_reused_tokens": 63065,
+      "estimated_cache_hit_pct": 90.54,
+      "per_call": [
+        {
+          "prompt_tokens": 2839,
+          "completion_tokens": 7379,
+          "reported_cached_tokens": 0,
+          "estimated_reused_tokens": 0,
+          "estimated_new_tokens": 2839
+        },
+        {
+          "prompt_tokens": 11383,
+          "completion_tokens": 4914,
+          "reported_cached_tokens": 2816,
+          "estimated_reused_tokens": 10218,
+          "estimated_new_tokens": 1165
+        },
+        {
+          "prompt_tokens": 17725,
+          "completion_tokens": 18825,
+          "reported_cached_tokens": 11328,
+          "estimated_reused_tokens": 16297,
+          "estimated_new_tokens": 1428
+        },
+        {
+          "prompt_tokens": 37705,
+          "completion_tokens": 2302,
+          "reported_cached_tokens": 17664,
+          "estimated_reused_tokens": 36550,
+          "estimated_new_tokens": 1155
+        }
+      ]
+    }
+  },
+  "minions": [],
+  "minions_total": {
+    "count": 0,
+    "api_calls": 0,
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "total_tokens": 0
+  },
+  "cache_totals": {
+    "n_sessions": 1,
+    "n_calls": 4,
+    "total_prompt_tokens": 69652,
+    "reported_cached_tokens": 31808,
+    "reported_over_prompt_tokens": 69652,
+    "reported_sessions": 1,
+    "reported_cache_hit_pct": 45.67,
+    "estimated_reused_tokens": 63065,
+    "estimated_cache_hit_pct": 90.54
+  }
+}
