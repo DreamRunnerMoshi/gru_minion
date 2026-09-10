@@ -68,7 +68,7 @@ PASS/FAIL verdict, or a per-delegation dollar figure, the plugin also drives
 `gru-delegate` (needs `OPENROUTER_API_KEY`):
 
 ```bash
-uvx --from "git+https://github.com/DreamRunnerMoshi/gru_minion@v0.1.0" gru-delegate --help
+uvx --from "git+https://github.com/DreamRunnerMoshi/gru_minion@v0.2.0" gru-delegate --help
 # or: pip install git+https://github.com/DreamRunnerMoshi/gru_minion
 ```
 
